@@ -1,14 +1,42 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+
+import 'package:rootysysproject/bloc/inspectiontype/bloc/inspectiontype_bloc.dart';
+import 'package:rootysysproject/bloc/inspectiontype/bloc/inspectiontype_event.dart';
+import 'package:rootysysproject/bloc/inspectiontype/bloc/inspectiontype_state.dart';
 import 'package:rootysysproject/screens/Tyres_screen.dart';
 
-class SelectInspectionBottomSheet extends StatelessWidget {
+class SelectInspectionBottomSheet extends StatefulWidget {
   const SelectInspectionBottomSheet({
     super.key,
     required this.onFullInspectionTap,
+    required this.vehicleid,
+    required this.customerid,
+    this.inspectionId,
   });
 
   final VoidCallback onFullInspectionTap;
+  final String vehicleid;
+  final String customerid;
+  final String? inspectionId;
+
+  @override
+  State<SelectInspectionBottomSheet> createState() =>
+      _SelectInspectionBottomSheetState();
+}
+
+class _SelectInspectionBottomSheetState
+    extends State<SelectInspectionBottomSheet> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<InspectionBloc>().add(GetInspectionTypesEvent());
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +56,6 @@ class SelectInspectionBottomSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             SizedBox(height: 24.h),
-
             Text(
               'Select inspect type',
               style: TextStyle(
@@ -39,44 +66,91 @@ class SelectInspectionBottomSheet extends StatelessWidget {
                 color: Colors.black,
               ),
             ),
-
             SizedBox(height: 20.h),
-
-            // =====================================================
-            // DIVIDER
-            // =====================================================
             Container(
               width: 370.w,
               height: 1.h,
               color: const Color(0xFFE8E8E8),
             ),
-
             SizedBox(height: 16.h),
 
-            // =====================================================
-            // FULL INSPECTION
-            inspectiondetails(
-              "assets/images/car.png",
-              'Full Inspect',
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => TyresScreen()),
-                );
-              },
+            Expanded(
+              child: BlocBuilder<InspectionBloc, InspectionState>(
+                builder: (context, state) {
+                  if (state is InspectionLoading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (state is InspectionError) {
+                    return Center(
+                      child: Text(state.message, textAlign: TextAlign.center),
+                    );
+                  }
+
+                  if (state is InspectionTypesLoaded) {
+                    final inspections = state.inspectionModel.data ?? [];
+
+                    if (inspections.isEmpty) {
+                      return const Center(
+                        child: Text('No inspection types found'),
+                      );
+                    }
+
+                    return ListView.separated(
+                      padding: EdgeInsets.zero,
+                      itemCount: inspections.length,
+                      separatorBuilder: (context, index) =>
+                          SizedBox(height: 10.h),
+                      itemBuilder: (context, index) {
+                        final inspection = inspections[index];
+                        final name = inspection.name?.trim() ?? '';
+                        final normalizedName = name.toLowerCase();
+
+                        String? image;
+                        if (normalizedName.contains('full inspection')) {
+                          image = 'assets/images/car.png';
+                        } else if (normalizedName.contains('insurance')) {
+                          image = 'assets/images/insurance inspect.png';
+                        } else if (normalizedName.contains('interior')) {
+                          image = 'assets/images/interior inspect.png';
+                        }
+
+                        return inspectiondetails(
+                          image,
+                          name,
+                          onTap: () {
+                            if (normalizedName.contains('full inspection') ||
+                                normalizedName.contains('full inspect')) {
+                              widget.onFullInspectionTap();
+
+                              // Replace these with the actual IDs from your app.
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TyresScreen(
+                                    vehicleId: widget.vehicleid,
+                                    typeItemId: inspection.id.toString(),
+                                    customerId: widget.customerid,
+                                    inspectionId: widget.inspectionId
+                                        .toString(),
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        );
+                      },
+                    );
+                  }
+
+                  if (state is InspectionInitial) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  return const SizedBox.shrink();
+                },
+              ),
             ),
-            SizedBox(height: 10.h),
-            inspectiondetails(
-              "assets/images/insurance inspect.png",
-              "insurance inspect",
-            ),
-            SizedBox(height: 10.h),
-            inspectiondetails(
-              "assets/images/interior inspect.png",
-              "interior inspect",
-            ),
-            SizedBox(height: 10.h),
-            inspectiondetails(null, "interior inspect"),
           ],
         ),
       ),
@@ -109,11 +183,10 @@ class SelectInspectionBottomSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(5.r),
               ),
               alignment: Alignment.center,
-
               child: image != null
                   ? Image.asset(image, color: const Color(0xFF2A2A2A))
                   : Text(
-                      containerText ?? "R",
+                      containerText ?? 'R',
                       style: TextStyle(
                         fontFamily: 'Manrope',
                         fontWeight: FontWeight.w600,
@@ -123,9 +196,7 @@ class SelectInspectionBottomSheet extends StatelessWidget {
                       textAlign: TextAlign.center,
                     ),
             ),
-
             SizedBox(width: 10.w),
-
             Expanded(
               child: Text(
                 text,
@@ -138,7 +209,6 @@ class SelectInspectionBottomSheet extends StatelessWidget {
                 ),
               ),
             ),
-
             Container(
               width: 24.w,
               height: 24.h,
@@ -147,7 +217,7 @@ class SelectInspectionBottomSheet extends StatelessWidget {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: Image.asset("assets/images/Vector (2).png"),
+              child: Image.asset('assets/images/Vector (2).png'),
             ),
           ],
         ),

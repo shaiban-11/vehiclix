@@ -1,15 +1,16 @@
 class CountrySpecModel {
-  bool? success;
-  List<CountrySpecData>? data;
+  final bool? success;
+  final List<CountrySpecData>? data;
 
-  CountrySpecModel({this.success, this.data});
+  const CountrySpecModel({this.success, this.data});
 
   factory CountrySpecModel.fromJson(Map<String, dynamic> json) {
     return CountrySpecModel(
-      success: json['success'],
+      success: json['success'] as bool?,
       data: (json['data'] as List?)
-          ?.map(
-            (item) => CountrySpecData.fromJson(item as Map<String, dynamic>),
+          ?.whereType<Map>()
+          .map(
+            (item) => CountrySpecData.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList(),
     );
@@ -24,16 +25,42 @@ class CountrySpecModel {
 }
 
 class CountrySpecData {
-  // Add country specification fields here
-  // when the API returns a non-empty data list.
+  final String? id;
+  final String? name;
+  final String? code;
+  final String? description;
 
-  CountrySpecData();
+  const CountrySpecData({this.id, this.name, this.code, this.description});
 
   factory CountrySpecData.fromJson(Map<String, dynamic> json) {
-    return CountrySpecData();
+    String? readString(List<String> keys) {
+      for (final key in keys) {
+        final value = json[key];
+
+        if (value != null && value.toString().trim().isNotEmpty) {
+          return value.toString().trim();
+        }
+      }
+
+      return null;
+    }
+
+    return CountrySpecData(
+      id: readString(['_id', 'id', 'country_spec_id', 'countrySpecId']),
+      name: readString([
+        'name',
+        'country_spec',
+        'country_spec_name',
+        'countrySpecName',
+        'title',
+        'label',
+      ]),
+      code: readString(['code', 'country_code', 'countryCode']),
+      description: readString(['description', 'details']),
+    );
   }
 
   Map<String, dynamic> toJson() {
-    return {};
+    return {'_id': id, 'name': name, 'code': code, 'description': description};
   }
 }

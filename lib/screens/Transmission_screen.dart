@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+
+import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_bloc.dart';
+import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_state.dart';
 import 'package:rootysysproject/screens/Front_Left_door_screen.dart';
 
 class TransmissionScreen extends StatefulWidget {
   final String engineUpperCoverStatus;
   final ValueChanged<String> onEngineUpperCoverStatusChanged;
 
+  // Retained for compatibility with the existing TyresScreen.
   final List<String> TransmissionItems;
 
   final Map<String, String> itemStatus;
@@ -25,35 +30,121 @@ class TransmissionScreen extends StatefulWidget {
 }
 
 class _TransmissionScreenState extends State<TransmissionScreen> {
-  String selectedtransmission = "Transmission Fluid Leaks";
+  String? selectedTransmission;
+
+  // Read transmission items from the existing inspection API response.
+  List<String> get apiTransmissionItems {
+    final state = context.read<InspectionDetailsBloc>().state;
+
+    if (state is! InspectionDetailsLoaded) {
+      return [];
+    }
+
+    final categories = state.model.data?.categories ?? [];
+
+    for (final category in categories) {
+      if (category is! Map) continue;
+
+      final categoryData = category['categoryId'];
+
+      if (categoryData is! Map) continue;
+
+      final categoryName = categoryData['name']
+          ?.toString()
+          .toLowerCase()
+          .trim();
+
+      if (categoryName != 'transmission') continue;
+
+      final items = category['items'];
+
+      if (items is! List) return [];
+
+      return items
+          .whereType<Map>()
+          .map((entry) {
+            final itemData = entry['itemId'];
+
+            if (itemData is Map) {
+              return itemData['name']?.toString() ?? '';
+            }
+
+            return '';
+          })
+          .where((name) => name.isNotEmpty)
+          .toList();
+    }
+
+    return [];
+  }
+
+  List<String> get displayTransmissionItems {
+    final apiItems = apiTransmissionItems;
+
+    // Use API items when available; otherwise preserve the existing list.
+    return apiItems.isNotEmpty ? apiItems : widget.TransmissionItems;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildTransmissionUpperCover(),
+    return BlocBuilder<InspectionDetailsBloc, InspectionDetailsState>(
+      builder: (context, state) {
+        final transmissionItems = displayTransmissionItems;
 
-        SizedBox(height: 10.h),
+        if (state is InspectionDetailsLoading ||
+            state is InspectionDetailsInitial) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-        ...widget.TransmissionItems.map(
-          (item) => Padding(
-            padding: EdgeInsets.only(bottom: 10.h),
-            child: _buildTransmissionItem(item),
-          ),
-        ),
-      ],
+        if (state is InspectionDetailsError) {
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.all(16.w),
+              child: Text(
+                'Unable to load transmission details: ${state.message}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+
+        if (selectedTransmission != null &&
+            !transmissionItems.contains(selectedTransmission)) {
+          selectedTransmission = null;
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTransmissionUpperCover(),
+            SizedBox(height: 10.h),
+
+            if (transmissionItems.isEmpty)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 12.h),
+                child: const Text('No transmission inspection items found.'),
+              )
+            else
+              ...transmissionItems.map(
+                (item) => Padding(
+                  padding: EdgeInsets.only(bottom: 10.h),
+                  child: _buildTransmissionItem(item),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
   // ================================================================
-  // ENGINE UPPER COVER
+  // TRANSMISSION UPPER COVER
   // ================================================================
 
   Widget _buildTransmissionUpperCover() {
     return Column(
       children: [
         SizedBox(height: 30.h),
-
         Container(
           width: 370.w,
           height: 237.h,
@@ -75,7 +166,7 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                 children: [
                   Expanded(
                     child: Text(
-                      'Transmission Fluid Leaks',
+                      selectedTransmission ?? 'Transmission Fluid Leaks',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -87,7 +178,6 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                       ),
                     ),
                   ),
-
                   Icon(
                     Icons.keyboard_arrow_right_rounded,
                     size: 29.sp,
@@ -95,9 +185,7 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                   ),
                 ],
               ),
-
               SizedBox(height: 20.h),
-
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -111,9 +199,7 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                             'Fail',
                             Icons.cancel_outlined,
                           ),
-
                           SizedBox(width: 8.w),
-
                           _buildTransmissionStatusButton(
                             'Pass',
                             Icons.verified_outlined,
@@ -122,12 +208,10 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                       ),
                     ),
                   ),
-
                   SizedBox(width: 8.w),
-
                   GestureDetector(
                     onTap: () {
-                      // TODO: Add camera/image picker
+                      // Camera/image picker can be integrated here later.
                     },
                     child: Container(
                       width: 116.w,
@@ -144,21 +228,18 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                       child: Row(
                         children: [
                           SizedBox(width: 9.w),
-
                           Icon(
                             Icons.camera_alt_outlined,
                             size: 16.sp,
                             color: const Color(0xFF222222),
                           ),
-
                           SizedBox(width: 8.w),
-
                           Text(
-                            "Add photo",
+                            'Add photo',
                             style: TextStyle(
                               color: const Color(0xFF222222),
                               fontWeight: FontWeight.w500,
-                              fontFamily: "Manrope",
+                              fontFamily: 'Manrope',
                               fontSize: 14.sp,
                             ),
                           ),
@@ -168,9 +249,7 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                   ),
                 ],
               ),
-
               SizedBox(height: 75.h),
-
               Container(
                 width: 346.w,
                 height: 48.h,
@@ -193,14 +272,14 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                     color: const Color(0xFF222222),
                   ),
                   decoration: InputDecoration(
-                    hintText: "Add comment",
+                    hintText: 'Add comment',
                     hintStyle: TextStyle(
                       color: const Color(0xFF5C5C5C),
                       fontWeight: FontWeight.w500,
-                      fontFamily: "Manrope",
+                      fontFamily: 'Manrope',
                       fontSize: 14.sp,
                     ),
-                    contentPadding: EdgeInsets.only(left: 10, top: 10),
+                    contentPadding: const EdgeInsets.only(left: 10, top: 10),
                     border: const OutlineInputBorder(
                       borderSide: BorderSide.none,
                     ),
@@ -232,9 +311,7 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, color: const Color(0xFF3A3A3A), size: 18.sp),
-
             SizedBox(width: 3.w),
-
             Text(
               status,
               style: TextStyle(
@@ -255,9 +332,15 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
   // ================================================================
 
   Widget _buildTransmissionItem(String title) {
-    final bool isSelected = selectedtransmission == title;
+    final bool isSelected = selectedTransmission == title;
+
     return GestureDetector(
       onTap: () {
+        setState(() {
+          selectedTransmission = title;
+        });
+
+        widget.onItemTap(title);
         showTransmissionbottomsheet(context, title);
       },
       child: Container(
@@ -270,7 +353,7 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
           left: 12.w,
         ),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F5F5),
+          color: isSelected ? const Color(0xFFD9FFD0) : const Color(0xFFF5F5F5),
           borderRadius: BorderRadius.circular(12.r),
         ),
         child: Row(
@@ -289,7 +372,6 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
                 ),
               ),
             ),
-
             Icon(
               Icons.keyboard_arrow_right_rounded,
               size: 22.sp,
@@ -301,6 +383,10 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
     );
   }
 }
+
+// ================================================================
+// TRANSMISSION BOTTOM SHEET
+// ================================================================
 
 void showTransmissionbottomsheet(
   BuildContext context,

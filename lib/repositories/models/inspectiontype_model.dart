@@ -1,17 +1,17 @@
-class InspectionTypeModel {
+class InspectionModel {
   bool? success;
-  List<InspectionTypeData>? data;
+  List<InspectionData>? data;
 
-  InspectionTypeModel({this.success, this.data});
+  InspectionModel({this.success, this.data});
 
-  factory InspectionTypeModel.fromJson(Map<String, dynamic> json) {
-    return InspectionTypeModel(
+  factory InspectionModel.fromJson(Map<String, dynamic> json) {
+    return InspectionModel(
       success: json['success'],
-      data: (json['data'] as List?)
-          ?.map(
-            (item) => InspectionTypeData.fromJson(item as Map<String, dynamic>),
-          )
-          .toList(),
+      data: json['data'] != null
+          ? (json['data'] as List)
+                .map((item) => InspectionData.fromJson(item))
+                .toList()
+          : [],
     );
   }
 
@@ -23,16 +23,17 @@ class InspectionTypeModel {
   }
 }
 
-class InspectionTypeData {
-  // Add fields here when the API returns actual inspection type data.
+class InspectionData {
+  String? id;
+  String? name;
 
-  InspectionTypeData();
+  InspectionData({this.id, this.name});
 
-  factory InspectionTypeData.fromJson(Map<String, dynamic> json) {
-    return InspectionTypeData();
+  factory InspectionData.fromJson(Map<String, dynamic> json) {
+    return InspectionData(id: json['_id'], name: json['name']);
   }
 
   Map<String, dynamic> toJson() {
-    return {};
+    return {'_id': id, 'name': name};
   }
 }

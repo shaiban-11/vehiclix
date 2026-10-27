@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_bloc.dart';
+import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_state.dart';
 
 class InteriorExterior extends StatelessWidget {
   final String engineUpperCoverStatus;
   final ValueChanged<String> onEngineUpperCoverStatusChanged;
 
+  // Fallback items from the parent screen.
   final List<String> interiorExteriorItems;
 
   final Map<String, String> itemStatus;
   final ValueChanged<String> onItemTap;
+
+  // Pass 'interior' or 'exterior' depending on the selected inspection.
+  final String categoryName;
 
   const InteriorExterior({
     super.key,
@@ -17,24 +24,91 @@ class InteriorExterior extends StatelessWidget {
     required this.interiorExteriorItems,
     required this.itemStatus,
     required this.onItemTap,
+    this.categoryName = 'interior',
   });
+
+  List<String> _getApiItems(InspectionDetailsState state) {
+    if (state is! InspectionDetailsLoaded) {
+      return interiorExteriorItems;
+    }
+
+    final categories = state.model.data?.categories;
+
+    if (categories == null || categories.isEmpty) {
+      return interiorExteriorItems;
+    }
+
+    for (final category in categories) {
+      if (category is! Map) continue;
+
+      final categoryId = category['categoryId'];
+
+      String name = '';
+
+      if (categoryId is Map) {
+        name = (categoryId['name'] ?? '').toString();
+      } else if (categoryId is String) {
+        name = categoryId;
+      }
+
+      if (name.trim().toLowerCase() != categoryName.trim().toLowerCase()) {
+        continue;
+      }
+
+      final items = category['items'];
+
+      if (items is! List) {
+        return interiorExteriorItems;
+      }
+
+      final List<String> apiItems = [];
+
+      for (final item in items) {
+        if (item is! Map) continue;
+
+        final itemId = item['itemId'];
+
+        String itemName = '';
+
+        if (itemId is Map) {
+          itemName = (itemId['name'] ?? '').toString();
+        } else if (itemId is String) {
+          itemName = itemId;
+        }
+
+        if (itemName.trim().isNotEmpty) {
+          apiItems.add(itemName.trim());
+        }
+      }
+
+      // Use API items when available; otherwise use the fallback list.
+      return apiItems.isNotEmpty ? apiItems : interiorExteriorItems;
+    }
+
+    return interiorExteriorItems;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildEngineUpperCover(),
+    return BlocBuilder<InspectionDetailsBloc, InspectionDetailsState>(
+      builder: (context, state) {
+        final List<String> displayItems = _getApiItems(state);
 
-        SizedBox(height: 10.h),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildEngineUpperCover(),
+            SizedBox(height: 10.h),
 
-        ...interiorExteriorItems.map(
-          (item) => Padding(
-            padding: EdgeInsets.only(bottom: 10.h),
-            child: _buildInteriorExteriorItem(item),
-          ),
-        ),
-      ],
+            ...displayItems.map(
+              (item) => Padding(
+                padding: EdgeInsets.only(bottom: 10.h),
+                child: _buildInteriorExteriorItem(item),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -42,13 +116,15 @@ class InteriorExterior extends StatelessWidget {
     return Column(
       children: [
         SizedBox(height: 10.h),
+
         Center(
           child: Image.asset(
-            "assets/images/carparts.png",
+            'assets/images/carparts.png',
             height: 197.h,
             width: 372.w,
           ),
         ),
+
         SizedBox(height: 30.h),
 
         Container(
@@ -98,9 +174,6 @@ class InteriorExterior extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // ------------------------------------------------------
-                  // STATUS BUTTONS
-                  // ------------------------------------------------------
                   Expanded(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -108,13 +181,9 @@ class InteriorExterior extends StatelessWidget {
                       child: Row(
                         children: [
                           _buildInteriorStatusButton('Repaired'),
-
                           SizedBox(width: 8.w),
-
                           _buildInteriorStatusButton('Damaged'),
-
                           SizedBox(width: 8.w),
-
                           _buildInteriorStatusButton('Checked'),
                         ],
                       ),
@@ -124,7 +193,9 @@ class InteriorExterior extends StatelessWidget {
                   SizedBox(width: 8.w),
 
                   GestureDetector(
-                    onTap: () {},
+                    onTap: () {
+                      // Camera action can be connected here.
+                    },
                     child: Container(
                       width: 39.w,
                       height: 39.h,
@@ -179,7 +250,6 @@ class InteriorExterior extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           status,
-
           style: TextStyle(
             fontFamily: 'Manrope',
             fontSize: 13.sp,
@@ -196,7 +266,9 @@ class InteriorExterior extends StatelessWidget {
 
   Widget _buildInteriorExteriorItem(String title) {
     return GestureDetector(
-      onTap: () {},
+      onTap: () {
+        onItemTap(title);
+      },
       child: Container(
         width: double.infinity,
         height: 48.h,

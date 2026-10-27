@@ -28,10 +28,10 @@ class CustomerProfileData {
 
   factory CustomerProfileData.fromJson(Map<String, dynamic> json) {
     return CustomerProfileData(
-      user: json['user'] != null ? CustomerUser.fromJson(json['user']) : null,
-      profile: json['profile'] != null
-          ? CustomerProfile.fromJson(json['profile'])
+      user: json['user_id'] is Map
+          ? CustomerUser.fromJson(Map<String, dynamic>.from(json['user_id']))
           : null,
+      profile: CustomerProfile.fromJson(json),
     );
   }
 

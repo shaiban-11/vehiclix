@@ -1,8 +1,7 @@
-// lib/features/vehicle/data/models/brand_model.dart
-
 class BrandResponse {
   bool? success;
-  List<BrandData>? data;
+  String? message;
+  List<BrandData> data;
   bool? hasMore;
   int? total;
   int? page;
@@ -10,25 +9,31 @@ class BrandResponse {
 
   BrandResponse({
     this.success,
-    this.data,
+    this.message,
+    List<BrandData>? data,
     this.hasMore,
     this.total,
     this.page,
     this.limit,
-  });
+  }) : data = data ?? [];
 
-  BrandResponse.fromJson(Map<String, dynamic> json) {
-    success = json['success'];
-    if (json['data'] != null) {
-      data = <BrandData>[];
-      json['data'].forEach((v) {
-        data!.add(BrandData.fromJson(v));
-      });
-    }
-    hasMore = json['has_more'];
-    total = json['total'];
-    page = json['page'];
-    limit = json['limit'];
+  factory BrandResponse.fromJson(Map<String, dynamic> json) {
+    return BrandResponse(
+      success: json['success'] as bool?,
+      message: json['message']?.toString(),
+      data: json['data'] is List
+          ? (json['data'] as List)
+                .whereType<Map>()
+                .map(
+                  (item) => BrandData.fromJson(Map<String, dynamic>.from(item)),
+                )
+                .toList()
+          : [],
+      hasMore: json['has_more'] as bool?,
+      total: json['total'] is num ? (json['total'] as num).toInt() : null,
+      page: json['page'] is num ? (json['page'] as num).toInt() : null,
+      limit: json['limit'] is num ? (json['limit'] as num).toInt() : null,
+    );
   }
 }
 
@@ -38,8 +43,10 @@ class BrandData {
 
   BrandData({this.id, this.name});
 
-  BrandData.fromJson(Map<String, dynamic> json) {
-    id = json['_id']; // Assuming your DB uses _id
-    name = json['name']; // Assuming the brand name field is 'name'
+  factory BrandData.fromJson(Map<String, dynamic> json) {
+    return BrandData(
+      id: (json['_id'] ?? json['id'])?.toString(),
+      name: (json['name'] ?? json['brand_name'])?.toString(),
+    );
   }
 }

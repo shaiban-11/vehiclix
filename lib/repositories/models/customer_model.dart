@@ -28,7 +28,7 @@ class CustomerModel {
                       CustomerData.fromJson(Map<String, dynamic>.from(item)),
                 )
                 .toList()
-          : null,
+          : <CustomerData>[],
       hasMore: json['has_more'] as bool?,
       total: _toInt(json['total']),
       page: _toInt(json['page']),
@@ -69,7 +69,10 @@ class CustomerData {
   });
 
   factory CustomerData.fromJson(Map<String, dynamic> json) {
-    final user = json['user'] is Map
+    // API response uses user_id, which contains the customer details.
+    final user = json['user_id'] is Map
+        ? Map<String, dynamic>.from(json['user_id'])
+        : json['user'] is Map
         ? Map<String, dynamic>.from(json['user'])
         : <String, dynamic>{};
 
@@ -87,7 +90,8 @@ class CustomerData {
     }
 
     return CustomerData(
-      id: readValue([json['id'], json['customer_id']]),
+      // MongoDB commonly returns _id instead of id.
+      id: readValue([json['_id'], json['id'], json['customer_id']]),
       name: readValue([
         json['name'],
         json['customer_name'],
@@ -101,11 +105,14 @@ class CustomerData {
         json['phone_number'],
         user['phone'],
         user['mobile'],
+        user['phone_number'],
+        profile['phone'],
         profile['phone_number'],
       ]),
       whatsappNumber: readValue([
         json['whatsapp_number'],
         json['whatsapp'],
+        user['whatsapp_number'],
         profile['whatsapp_number'],
       ]),
       customerType: readValue([
@@ -116,7 +123,7 @@ class CustomerData {
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
+    '_id': id,
     'name': name,
     'email': email,
     'phone': phone,

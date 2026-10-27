@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 class VehicleModel {
   bool? success;
   List<VehicleModelData>? data;
@@ -52,9 +54,10 @@ class VehicleModelData {
   VehicleModelData({this.id, this.name});
 
   factory VehicleModelData.fromJson(Map<String, dynamic> json) {
+    debugPrint('VEHICLE MODEL JSON: $json');
     return VehicleModelData(
       id: json['_id']?.toString(),
-      name: json['name']?.toString(),
+      name: (json['model_name'] ?? json['name'])?.toString(),
     );
   }
 

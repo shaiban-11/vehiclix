@@ -34,32 +34,34 @@ class VehicleVarientsModel {
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'success': success,
-      'data': data?.map((item) => item.toJson()).toList(),
-      'has_more': hasMore,
-      'total': total,
-      'page': page,
-      'limit': limit,
-    };
-  }
+  Map<String, dynamic> toJson() => {
+    'success': success,
+    'data': data?.map((item) => item.toJson()).toList(),
+    'has_more': hasMore,
+    'total': total,
+    'page': page,
+    'limit': limit,
+  };
 }
 
 class VehicleVarientsData {
   String? id;
-  String? name;
+  String? modelId;
+  String? variantName;
 
-  VehicleVarientsData({this.id, this.name});
+  VehicleVarientsData({this.id, this.modelId, this.variantName});
 
   factory VehicleVarientsData.fromJson(Map<String, dynamic> json) {
     return VehicleVarientsData(
       id: json['_id']?.toString(),
-      name: json['name']?.toString(),
+      modelId: json['model_id']?.toString(),
+      variantName: json['variant_name']?.toString(),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {'_id': id, 'name': name};
-  }
+  Map<String, dynamic> toJson() => {
+    '_id': id,
+    'model_id': modelId,
+    'variant_name': variantName,
+  };
 }

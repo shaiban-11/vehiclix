@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:image_picker/image_picker.dart';
 
 class FrontLeftDoor extends StatefulWidget {
   final String exteriorName;
   final bool showChasis;
-
   final VoidCallback? onSave;
+
+  // Optional callback to send inspection details to the parent.
+  final ValueChanged<Map<String, dynamic>>? onSaveDetails;
 
   const FrontLeftDoor({
     super.key,
     required this.exteriorName,
     this.onSave,
     required this.showChasis,
+    this.onSaveDetails,
   });
 
   @override
@@ -20,19 +24,44 @@ class FrontLeftDoor extends StatefulWidget {
 
 class _FrontLeftDoorState extends State<FrontLeftDoor> {
   final List<String> frontleftdooroptions = [
-    "Original paint",
-    "Repainted",
-    "Cosmetic paint",
-    "Faded paint",
-    "Scratch",
-    "Deep Scratch",
-    "Dent",
-    "Major Dent",
+    'Original paint',
+    'Repainted',
+    'Cosmetic paint',
+    'Faded paint',
+    'Scratch',
+    'Deep Scratch',
+    'Dent',
+    'Major Dent',
   ];
+
+  final TextEditingController _remarkController = TextEditingController();
+  final ImagePicker _imagePicker = ImagePicker();
+
   String selectedResult = 'Fail';
-  bool showChasis = false;
 
   final Set<String> selectedDefects = {};
+  final List<XFile> selectedPhotos = [];
+
+  Future<void> _pickPhoto() async {
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+
+      if (photo != null && mounted) {
+        setState(() {
+          selectedPhotos.add(photo);
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unable to select photo: $e')));
+    }
+  }
 
   void _selectResult(String value) {
     setState(() {
@@ -48,6 +77,31 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
         selectedDefects.add(value);
       }
     });
+  }
+
+  void _saveInspection() {
+    final Map<String, dynamic> inspectionDetails = {
+      'inspectionItem': widget.exteriorName,
+      'result': selectedResult,
+      'defects': selectedDefects.toList(),
+      'remark': _remarkController.text.trim(),
+      'photos': selectedPhotos.map((photo) => photo.path).toList(),
+    };
+
+    // Send details to the parent screen.
+    widget.onSaveDetails?.call(inspectionDetails);
+
+    // Close the bottom sheet.
+    Navigator.pop(context);
+
+    // Preserve the existing callback.
+    widget.onSave?.call();
+  }
+
+  @override
+  void dispose() {
+    _remarkController.dispose();
+    super.dispose();
   }
 
   @override
@@ -78,30 +132,23 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Padding(
-                      padding: EdgeInsets.only(top: 14.h),
-                      child: Text(
-                        widget.exteriorName,
-                        style: TextStyle(
-                          fontFamily: 'Manrope',
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w600,
-                          height: 1.0,
-                          color: const Color(0xFF000000),
+                    Expanded(
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 14.h),
+                        child: Text(
+                          widget.exteriorName,
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.w600,
+                            height: 1.0,
+                            color: const Color(0xFF000000),
+                          ),
                         ),
                       ),
                     ),
-
-                    const Spacer(),
-
                     GestureDetector(
-                      onTap: () {
-                        // Close the bottom sheet first
-                        Navigator.pop(context);
-
-                        // Then notify the parent
-                        widget.onSave?.call();
-                      },
+                      onTap: _saveInspection,
                       child: Container(
                         width: 68.w,
                         height: 48.h,
@@ -166,6 +213,7 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                               text: 'Fail',
                               type: ResultType.fail,
                               selected: selectedResult == 'Fail',
+                              onTap: () => _selectResult('Fail'),
                             ),
                           ),
                           SizedBox(width: 8.w),
@@ -174,6 +222,7 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                               text: 'Pass',
                               type: ResultType.pass,
                               selected: selectedResult == 'Pass',
+                              onTap: () => _selectResult('Pass'),
                             ),
                           ),
                         ],
@@ -188,6 +237,7 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                               text: 'N/A',
                               type: ResultType.normal,
                               selected: selectedResult == 'N/A',
+                              onTap: () => _selectResult('N/A'),
                             ),
                           ),
                           SizedBox(width: 8.w),
@@ -196,6 +246,7 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                               text: 'N/C',
                               type: ResultType.normal,
                               selected: selectedResult == 'N/C',
+                              onTap: () => _selectResult('N/C'),
                             ),
                           ),
                         ],
@@ -211,12 +262,16 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                           for (final option in frontleftdooroptions)
                             if (!widget.showChasis ||
                                 ![
-                                  "Scratch",
-                                  "Deep Scratch",
-                                  "Dent",
-                                  "Major Dent",
+                                  'Scratch',
+                                  'Deep Scratch',
+                                  'Dent',
+                                  'Major Dent',
                                 ].contains(option))
-                              _DefectButton(text: option),
+                              _DefectButton(
+                                text: option,
+                                selected: selectedDefects.contains(option),
+                                onTap: () => _toggleDefect(option),
+                              ),
                         ],
                       ),
 
@@ -224,12 +279,12 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
 
                       // REMARK
                       Text(
-                        "Remark",
+                        'Remark',
                         style: TextStyle(
                           color: const Color(0xFF222222),
                           fontSize: 14.sp,
                           fontWeight: FontWeight.w500,
-                          fontFamily: "Manrope",
+                          fontFamily: 'Manrope',
                         ),
                       ),
 
@@ -249,6 +304,7 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                           borderRadius: BorderRadius.circular(12.r),
                         ),
                         child: TextField(
+                          controller: _remarkController,
                           style: TextStyle(
                             fontFamily: 'Manrope',
                             fontWeight: FontWeight.w500,
@@ -256,16 +312,16 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                             color: const Color(0xFF222222),
                           ),
                           decoration: InputDecoration(
-                            hintText: "Comment",
+                            hintText: 'Comment',
                             hintStyle: TextStyle(
                               color: const Color(0xFF5C5C5C),
                               fontWeight: FontWeight.w500,
-                              fontFamily: "Manrope",
+                              fontFamily: 'Manrope',
                               fontSize: 14.sp,
                             ),
                             contentPadding: const EdgeInsets.only(
                               left: 10,
-                              top: 30,
+                              top: 18,
                             ),
                             border: const OutlineInputBorder(
                               borderSide: BorderSide.none,
@@ -291,7 +347,7 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                       SizedBox(height: 10.h),
 
                       GestureDetector(
-                        onTap: () {},
+                        onTap: _pickPhoto,
                         child: Container(
                           width: 139.w,
                           height: 39.h,
@@ -311,26 +367,40 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
                                 size: 18.sp,
                                 color: const Color(0xFF222222),
                               ),
-
                               SizedBox(width: 5.w),
-
-                              Text(
-                                'Attach photo',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                softWrap: false,
-                                style: TextStyle(
-                                  fontFamily: 'Manrope',
-                                  fontSize: 14.sp,
-                                  fontWeight: FontWeight.w500,
-                                  height: 1.0,
-                                  color: const Color(0xFF222222),
+                              Expanded(
+                                child: Text(
+                                  selectedPhotos.isEmpty
+                                      ? 'Attach photo'
+                                      : 'Photos (${selectedPhotos.length})',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    fontFamily: 'Manrope',
+                                    fontSize: 14.sp,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.0,
+                                    color: const Color(0xFF222222),
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
                       ),
+
+                      if (selectedPhotos.isNotEmpty) ...[
+                        SizedBox(height: 10.h),
+                        Text(
+                          '${selectedPhotos.length} photo(s) selected',
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 12.sp,
+                            color: const Color(0xFF555555),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -349,11 +419,13 @@ class _ResultButton extends StatelessWidget {
   final String text;
   final ResultType type;
   final bool selected;
+  final VoidCallback onTap;
 
   const _ResultButton({
     required this.text,
     required this.type,
     required this.selected,
+    required this.onTap,
   });
 
   @override
@@ -364,48 +436,44 @@ class _ResultButton extends StatelessWidget {
       case ResultType.fail:
         textColor = const Color(0xFFE90000);
         break;
-
       case ResultType.pass:
         textColor = const Color(0xFF449400);
         break;
-
       case ResultType.normal:
         textColor = const Color(0xFF3E3E3E);
         break;
     }
 
     return GestureDetector(
+      onTap: onTap,
       child: Container(
         height: 38.h,
         decoration: BoxDecoration(
           color: const Color(0xFFF5F5F5),
           borderRadius: BorderRadius.circular(13.r),
+          border: Border.all(
+            color: selected ? textColor : Colors.transparent,
+            width: 1.2.w,
+          ),
         ),
         child: Center(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // FAIL ICON
               if (type == ResultType.fail)
                 Icon(
                   Icons.cancel_outlined,
                   size: 20.sp,
                   color: const Color(0xFFE90000),
                 ),
-
-              // PASS ICON
               if (type == ResultType.pass)
                 Icon(
                   Icons.check_circle_outline,
                   size: 20.sp,
                   color: const Color(0xFF449400),
                 ),
-
-              // ICON GAP
               if (type == ResultType.fail || type == ResultType.pass)
                 SizedBox(width: 5.w),
-
-              // TEXT
               Text(
                 text,
                 style: TextStyle(
@@ -426,30 +494,44 @@ class _ResultButton extends StatelessWidget {
 
 class _DefectButton extends StatelessWidget {
   final String text;
+  final bool selected;
+  final VoidCallback onTap;
 
-  const _DefectButton({required this.text});
+  const _DefectButton({
+    required this.text,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      onTap: onTap,
       child: Container(
         width: 175.w,
         height: 46.h,
         decoration: BoxDecoration(
-          color: const Color(0xFFFFFFFF),
-          border: Border.all(color: const Color(0xFFE8E8E8), width: 1.w),
+          color: selected ? const Color(0xFFFFEEEE) : const Color(0xFFFFFFFF),
+          border: Border.all(
+            color: selected ? const Color(0xFFE90000) : const Color(0xFFE8E8E8),
+            width: 1.w,
+          ),
           borderRadius: BorderRadius.circular(32.r),
         ),
         padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
         child: Center(
           child: Text(
             text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: 'Manrope',
               fontSize: 14.sp,
               fontWeight: FontWeight.w600,
               height: 1.0,
-              color: const Color(0xFF222222),
+              color: selected
+                  ? const Color(0xFFE90000)
+                  : const Color(0xFF222222),
             ),
           ),
         ),

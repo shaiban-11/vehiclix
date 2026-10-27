@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:image_picker/image_picker.dart';
 
 class FrontLeftPopup extends StatefulWidget {
   final bool showBreakContainers;
   final bool showremark;
   final String tyreName;
-
   final VoidCallback? onSave;
+
+  // Optional callback to send collected values to the parent.
+  final ValueChanged<Map<String, dynamic>>? onSaveDetails;
 
   const FrontLeftPopup({
     super.key,
@@ -14,6 +17,7 @@ class FrontLeftPopup extends StatefulWidget {
     this.onSave,
     required this.showBreakContainers,
     required this.showremark,
+    this.onSaveDetails,
   });
 
   @override
@@ -24,6 +28,13 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
   String selectedResult = 'Fail';
 
   final Set<String> selectedDefects = {};
+
+  final TextEditingController _remarkController = TextEditingController();
+  final TextEditingController _breakTypeController = TextEditingController();
+  final TextEditingController _breakPadsController = TextEditingController();
+
+  final ImagePicker _imagePicker = ImagePicker();
+  final List<XFile> _selectedPhotos = [];
 
   void _selectResult(String value) {
     setState(() {
@@ -39,6 +50,56 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
         selectedDefects.add(value);
       }
     });
+  }
+
+  Future<void> _pickPhoto() async {
+    try {
+      final XFile? photo = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+
+      if (photo != null && mounted) {
+        setState(() {
+          _selectedPhotos.add(photo);
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Unable to select photo: $e')));
+    }
+  }
+
+  void _save() {
+    final Map<String, dynamic> details = {
+      'inspectionItem': widget.tyreName,
+      'result': selectedResult,
+      'defects': selectedDefects.toList(),
+      'remark': _remarkController.text.trim(),
+      'breakType': _breakTypeController.text.trim(),
+      'breakPads': _breakPadsController.text.trim(),
+      'photos': _selectedPhotos.map((photo) => photo.path).toList(),
+    };
+
+    // Return the collected inspection details to the parent.
+    widget.onSaveDetails?.call(details);
+
+    // Close the popup.
+    Navigator.pop(context);
+
+    // Preserve the existing callback.
+    widget.onSave?.call();
+  }
+
+  @override
+  void dispose() {
+    _remarkController.dispose();
+    _breakTypeController.dispose();
+    _breakPadsController.dispose();
+    super.dispose();
   }
 
   @override
@@ -62,28 +123,25 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // FRONT LEFT
-                  Padding(
-                    padding: EdgeInsets.only(top: 14.h),
-                    child: Text(
-                      widget.tyreName,
-                      style: TextStyle(
-                        fontFamily: 'Manrope',
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.w600,
-                        height: 1.0,
-                        color: const Color(0xFF000000),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 14.h),
+                      child: Text(
+                        widget.tyreName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Manrope',
+                          fontSize: 16.sp,
+                          fontWeight: FontWeight.w600,
+                          height: 1.0,
+                          color: const Color(0xFF000000),
+                        ),
                       ),
                     ),
                   ),
-
-                  const Spacer(),
-
                   GestureDetector(
-                    onTap: () {
-                      widget.onSave?.call();
-                      Navigator.pop(context);
-                    },
+                    onTap: _save,
                     child: Container(
                       width: 68.w,
                       height: 48.h,
@@ -113,21 +171,20 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
 
           Expanded(
             child: SingleChildScrollView(
-              physics: const NeverScrollableScrollPhysics(),
+              physics: const BouncingScrollPhysics(),
               child: Padding(
                 padding: EdgeInsets.only(
                   left: 12.w,
                   right: 9.w,
                   top: 15.h,
-                  bottom: 10.h,
+                  bottom: 20.h,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ==================================================
-                    // TEST RESULT
-                    // ==================================================
                     SizedBox(height: 5.h),
+
+                    // TEST RESULT
                     Text(
                       'Test result',
                       style: TextStyle(
@@ -151,9 +208,7 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
                             onTap: () => _selectResult('Fail'),
                           ),
                         ),
-
                         SizedBox(width: 8.w),
-
                         Expanded(
                           child: _ResultButton(
                             text: 'Pass',
@@ -177,9 +232,7 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
                             onTap: () => _selectResult('N/A'),
                           ),
                         ),
-
                         SizedBox(width: 8.w),
-
                         Expanded(
                           child: _ResultButton(
                             text: 'N/C',
@@ -190,109 +243,101 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
                         ),
                       ],
                     ),
-                    SizedBox(height: 26),
+
+                    SizedBox(height: 26.h),
+
+                    // REMARK
                     if (widget.showremark) ...[
                       Text(
-                        "Remark",
+                        'Remark',
                         style: TextStyle(
-                          color: Color(0xFF222222),
+                          color: const Color(0xFF222222),
                           fontSize: 14.sp,
                           fontWeight: FontWeight.w500,
-                          fontFamily: "Manrope",
+                          fontFamily: 'Manrope',
                         ),
                       ),
+
                       SizedBox(height: 9.h),
 
-                      Container(
-                        margin: EdgeInsets.only(
-                          top: 10.h,
-                          right: 14.w,
-                          bottom: 10.h,
-                          left: 10.w,
-                        ),
-                        height: 57.h,
-                        width: 370.w,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF5F5F5),
-                          borderRadius: BorderRadius.circular(12.r),
-                        ),
-                        child: TextField(
-                          style: TextStyle(
-                            fontFamily: 'Manrope',
-                            fontWeight: FontWeight.w500,
-                            fontSize: 16.sp,
-                            color: const Color(0xFF222222),
-                          ),
-                          decoration: InputDecoration(
-                            hintText: "Comment",
-                            hintStyle: TextStyle(
-                              color: const Color(0xFF5C5C5C),
-                              fontWeight: FontWeight.w500,
-                              fontFamily: "Manrope",
-                              fontSize: 14.sp,
-                            ),
-                            contentPadding: EdgeInsets.only(left: 10, top: 30),
-                            border: OutlineInputBorder(
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
-                        ),
+                      _buildTextField(
+                        controller: _remarkController,
+                        hint: 'Comment',
                       ),
                     ],
 
-                    SizedBox(height: 40.h),
+                    SizedBox(height: 25.h),
 
+                    // DEFECT OPTIONS
+                    if (!widget.showBreakContainers && !widget.showremark) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _DefectButton(
+                              text: 'Scratches',
+                              selected: selectedDefects.contains('Scratches'),
+                              onTap: () => _toggleDefect('Scratches'),
+                            ),
+                          ),
+                          SizedBox(width: 10.w),
+                          Expanded(
+                            child: _DefectButton(
+                              text: 'Bent',
+                              selected: selectedDefects.contains('Bent'),
+                              onTap: () => _toggleDefect('Bent'),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      SizedBox(height: 10.h),
+
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _DefectButton(
+                              text: 'Cracks',
+                              selected: selectedDefects.contains('Cracks'),
+                              onTap: () => _toggleDefect('Cracks'),
+                            ),
+                          ),
+                          SizedBox(width: 10.w),
+                          Expanded(
+                            child: _DefectButton(
+                              text: 'Corrosion',
+                              selected: selectedDefects.contains('Corrosion'),
+                              onTap: () => _toggleDefect('Corrosion'),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      SizedBox(height: 30.h),
+                    ],
+
+                    // BRAKE FIELDS
+                    if (widget.showBreakContainers) ...[
+                      _buildLabeledField(
+                        title: 'Break Type',
+                        hint: 'Select break type',
+                        controller: _breakTypeController,
+                        showArrow: true,
+                      ),
+
+                      SizedBox(height: 12.h),
+
+                      _buildLabeledField(
+                        title: 'Break pads',
+                        hint: 'Select break pads',
+                        controller: _breakPadsController,
+                        showArrow: false,
+                      ),
+
+                      SizedBox(height: 20.h),
+                    ],
+
+                    // ATTACH PHOTO
                     if (!widget.showBreakContainers) ...[
-                      if (!widget.showremark) ...[
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DefectButton(
-                                text: 'Scratches',
-                                selected: selectedDefects.contains('Scratches'),
-                                onTap: () => _toggleDefect('Scratches'),
-                              ),
-                            ),
-
-                            SizedBox(width: 10.w),
-
-                            Expanded(
-                              child: _DefectButton(
-                                text: 'Bent',
-                                selected: selectedDefects.contains('Bent'),
-                                onTap: () => _toggleDefect('Bent'),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        SizedBox(height: 10.h),
-
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DefectButton(
-                                text: 'Cracks',
-                                selected: selectedDefects.contains('Cracks'),
-                                onTap: () => _toggleDefect('Cracks'),
-                              ),
-                            ),
-
-                            SizedBox(width: 10.w),
-
-                            Expanded(
-                              child: _DefectButton(
-                                text: 'Corrosion',
-                                selected: selectedDefects.contains('Corrosion'),
-                                onTap: () => _toggleDefect('Corrosion'),
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        SizedBox(height: 45.h),
-                      ],
-
                       Text(
                         'Attach photo',
                         style: TextStyle(
@@ -307,9 +352,9 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
                       SizedBox(height: 10.h),
 
                       GestureDetector(
-                        onTap: () {},
+                        onTap: _pickPhoto,
                         child: Container(
-                          width: 139.w,
+                          width: 150.w,
                           height: 39.h,
                           padding: EdgeInsets.symmetric(horizontal: 10.w),
                           decoration: BoxDecoration(
@@ -327,15 +372,14 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
                                 size: 18.sp,
                                 color: const Color(0xFF222222),
                               ),
-
                               SizedBox(width: 5.w),
-
-                              Flexible(
+                              Expanded(
                                 child: Text(
-                                  'Attach photo',
+                                  _selectedPhotos.isEmpty
+                                      ? 'Attach photo'
+                                      : 'Photos (${_selectedPhotos.length})',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  softWrap: false,
                                   style: TextStyle(
                                     fontFamily: 'Manrope',
                                     fontSize: 14.sp,
@@ -349,19 +393,18 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
                           ),
                         ),
                       ),
-                    ],
 
-                    if (widget.showBreakContainers) ...[
-                      BreakContainers(
-                        titlefirst: "Break Type",
-                        titlesecond: "Select break type",
-                        showarrow: true,
-                      ),
-                      BreakContainers(
-                        titlefirst: "Break pads",
-                        titlesecond: "Select break type",
-                        showarrow: false,
-                      ),
+                      if (_selectedPhotos.isNotEmpty) ...[
+                        SizedBox(height: 8.h),
+                        Text(
+                          '${_selectedPhotos.length} photo(s) selected',
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontFamily: 'Manrope',
+                            color: const Color(0xFF5C5C5C),
+                          ),
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -370,6 +413,99 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String hint,
+  }) {
+    return Container(
+      margin: EdgeInsets.only(top: 10.h, right: 14.w, bottom: 10.h, left: 10.w),
+      height: 57.h,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F5F5),
+        borderRadius: BorderRadius.circular(12.r),
+      ),
+      child: TextField(
+        controller: controller,
+        style: TextStyle(
+          fontFamily: 'Manrope',
+          fontWeight: FontWeight.w500,
+          fontSize: 16.sp,
+          color: const Color(0xFF222222),
+        ),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: TextStyle(
+            color: const Color(0xFF5C5C5C),
+            fontWeight: FontWeight.w500,
+            fontFamily: 'Manrope',
+            fontSize: 14.sp,
+          ),
+          contentPadding: EdgeInsets.only(left: 10.w, top: 18.h),
+          border: const OutlineInputBorder(borderSide: BorderSide.none),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLabeledField({
+    required String title,
+    required String hint,
+    required TextEditingController controller,
+    required bool showArrow,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: const Color(0xFF222222),
+            fontWeight: FontWeight.w500,
+            fontFamily: 'Manrope',
+            fontSize: 14.sp,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        Container(
+          height: 57.h,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF5F5F5),
+            borderRadius: BorderRadius.circular(12.r),
+          ),
+          child: TextField(
+            controller: controller,
+            style: TextStyle(
+              fontFamily: 'Manrope',
+              fontWeight: FontWeight.w500,
+              fontSize: 16.sp,
+              color: const Color(0xFF222222),
+            ),
+            decoration: InputDecoration(
+              suffixIcon: showArrow
+                  ? Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 30.sp,
+                      color: const Color(0xFF111111),
+                    )
+                  : null,
+              hintText: hint,
+              hintStyle: TextStyle(
+                color: const Color(0xFF5C5C5C),
+                fontWeight: FontWeight.w500,
+                fontFamily: 'Manrope',
+                fontSize: 14.sp,
+              ),
+              contentPadding: EdgeInsets.only(left: 10.w, top: 18.h),
+              border: const OutlineInputBorder(borderSide: BorderSide.none),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -397,11 +533,9 @@ class _ResultButton extends StatelessWidget {
       case ResultType.fail:
         textColor = const Color(0xFFE90000);
         break;
-
       case ResultType.pass:
         textColor = const Color(0xFF449400);
         break;
-
       case ResultType.normal:
         textColor = const Color(0xFF3E3E3E);
         break;
@@ -414,6 +548,10 @@ class _ResultButton extends StatelessWidget {
         decoration: BoxDecoration(
           color: const Color(0xFFF5F5F5),
           borderRadius: BorderRadius.circular(13.r),
+          border: Border.all(
+            color: selected ? textColor : Colors.transparent,
+            width: 1.2.w,
+          ),
         ),
         child: Center(
           child: Row(
@@ -425,17 +563,14 @@ class _ResultButton extends StatelessWidget {
                   size: 20.sp,
                   color: const Color(0xFFE90000),
                 ),
-
               if (type == ResultType.pass)
                 Icon(
                   Icons.check_circle_outline,
                   size: 20.sp,
                   color: const Color(0xFF449400),
                 ),
-
               if (type == ResultType.fail || type == ResultType.pass)
                 SizedBox(width: 5.w),
-
               Text(
                 text,
                 style: TextStyle(
@@ -472,100 +607,31 @@ class _DefectButton extends StatelessWidget {
       child: Container(
         height: 46.h,
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFF5F5F5) : const Color(0xFFFFFFFF),
-          border: Border.all(color: const Color(0xFFE8E8E8), width: 1.w),
+          color: selected ? const Color(0xFFFFEEEE) : const Color(0xFFFFFFFF),
+          border: Border.all(
+            color: selected ? const Color(0xFFE90000) : const Color(0xFFE8E8E8),
+            width: 1.w,
+          ),
           borderRadius: BorderRadius.circular(32.r),
         ),
         padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
         child: Center(
           child: Text(
             text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: 'Manrope',
               fontSize: 14.sp,
               fontWeight: FontWeight.w600,
               height: 1.0,
-              color: const Color(0xFF222222),
+              color: selected
+                  ? const Color(0xFFE90000)
+                  : const Color(0xFF222222),
             ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class BreakContainers extends StatelessWidget {
-  final String titlefirst;
-  final String titlesecond;
-  final bool showarrow;
-  const BreakContainers({
-    super.key,
-    required this.titlefirst,
-    required this.titlesecond,
-    required this.showarrow,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          titlefirst,
-          style: TextStyle(
-            color: const Color(0xFF222222),
-            fontWeight: FontWeight.w500,
-            fontFamily: "Manrope",
-            fontSize: 14.sp,
-          ),
-        ),
-        SizedBox(height: 10.h),
-        Container(
-          margin: EdgeInsets.only(
-            top: 10.h,
-            right: 14.w,
-            bottom: 10.h,
-            left: 14.w,
-          ),
-          height: 57.h,
-          width: 370.w,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF5F5F5),
-            borderRadius: BorderRadius.circular(12.r),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: TextField(
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontWeight: FontWeight.w500,
-                    fontSize: 16.sp,
-                    color: const Color(0xFF222222),
-                  ),
-                  decoration: InputDecoration(
-                    suffixIcon: Icon(
-                      showarrow ? Icons.keyboard_arrow_down : null,
-                      size: 30.sp,
-                      color: const Color(0xFF111111),
-                    ),
-                    hintText: titlesecond,
-                    hintStyle: TextStyle(
-                      color: const Color(0xFF5C5C5C),
-                      fontWeight: FontWeight.w500,
-                      fontFamily: "Manrope",
-                      fontSize: 14.sp,
-                    ),
-                    contentPadding: EdgeInsets.only(left: 10, top: 20),
-                    border: OutlineInputBorder(borderSide: BorderSide.none),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

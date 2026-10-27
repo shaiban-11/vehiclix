@@ -1,5 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+
+import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_bloc.dart';
+import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_event.dart';
+import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_state.dart';
+
+import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_bloc.dart';
+import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_event.dart';
+import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_state.dart';
+
+import 'package:rootysysproject/repositories/models/submitinspection_model.dart';
+
 import 'package:rootysysproject/screens/Chasis_screen.dart';
 import 'package:rootysysproject/screens/Comment_screen.dart';
 import 'package:rootysysproject/screens/Electrical_screen.dart';
@@ -7,13 +19,22 @@ import 'package:rootysysproject/screens/Engine_screen.dart';
 import 'package:rootysysproject/screens/Exterior_screen.dart';
 import 'package:rootysysproject/screens/General_photos.dart';
 import 'package:rootysysproject/screens/Interior_exterior_screen.dart';
-import 'package:rootysysproject/screens/SelectinspectionBottmsheet_screen.dart';
 import 'package:rootysysproject/screens/Transmission_screen.dart';
 import 'package:rootysysproject/screens/front_left_popup.dart';
-import 'package:rootysysproject/screens/poda.dart';
 
 class TyresScreen extends StatefulWidget {
-  const TyresScreen({super.key});
+  final String customerId;
+  final String vehicleId;
+  final String typeItemId;
+  final String inspectionId;
+
+  const TyresScreen({
+    super.key,
+    required this.customerId,
+    required this.vehicleId,
+    required this.typeItemId,
+    required this.inspectionId,
+  });
 
   @override
   State<TyresScreen> createState() => _TyresScreenState();
@@ -22,48 +43,32 @@ class TyresScreen extends StatefulWidget {
 class _TyresScreenState extends State<TyresScreen> {
   bool showBackSuspensionContainers = false;
   String? selectedSuspension;
-  int selected = 0;
-
   String selectedTyre = 'Front Left';
-
   int selectedStep = 1;
-
-  // ================================================================
-  // FRONT SUSPENSION
-  // ================================================================
-
   bool frontSuspensionPass = true;
   bool frontSuspensionFail = false;
-
-  // ================================================================
-  // BACK SUSPENSION
-  // ================================================================
-
   bool backSuspensionPass = false;
   bool backSuspensionFail = true;
+  String engineUpperCoverStatus = 'Damaged';
+  String inspectionComment = '';
+  bool isSubmitting = false;
+
   final List<String> TransmissionItems = [
-    "Transmission fluid Leaks",
-    "Gear Selector",
-    "Unusual Noise",
-    "Gear Shifting",
-    "Differential",
+    'Transmission fluid Leaks',
+    'Gear Selector',
+    'Unusual Noise',
+    'Gear Shifting',
+    'Differential',
   ];
   final List<String> ChasisItems = [
-    "Core Support",
-    "Frame rail",
-    "Wheel house",
-    "Right fender apron",
-    "Shock tower/shock mount",
-    "Radiator Side support(side baffle)",
-    "Left fender apron",
+    'Core Support',
+    'Frame rail',
+    'Wheel house',
+    'Right fender apron',
+    'Shock tower/shock mount',
+    'Radiator Side support(side baffle)',
+    'Left fender apron',
   ];
-
-  // ================================================================
-  // INTERIOR & EXTERIOR
-  // ================================================================
-
-  String engineUpperCoverStatus = 'Damaged';
-
   final List<String> interiorExteriorItems = [
     '2.Rear View Mirror',
     '3.Steering Wheel Upholstery',
@@ -82,7 +87,6 @@ class _TyresScreenState extends State<TyresScreen> {
     '16.Front Bumper',
     '17.Back Bumper',
   ];
-
   final List<String> ExteriorItems = [
     'Front Bumper',
     'Hood',
@@ -114,24 +118,14 @@ class _TyresScreenState extends State<TyresScreen> {
     'Fog Lights',
     'Reverse Lights',
     'Number Plate Lights',
-    "Indicators & Hazards",
-    "Wipers",
-    "Soft Closing Doors",
-    "Sunroof/Moonroof",
-    "Interior Lights",
-    "Cruise Control",
+    'Indicators & Hazards',
+    'Wipers',
+    'Soft Closing Doors',
+    'Sunroof/Moonroof',
+    'Interior Lights',
+    'Cruise Control',
   ];
-
-  // Stores status for each Interior & Exterior item.
-  //
-  // Example:
-  // itemStatus['Dashboard'] = 'Damaged';
   final Map<String, String> itemStatus = {};
-
-  // ================================================================
-  // TYRE LIST
-  // ================================================================
-
   final List<String> tyreList = [
     'Front Left',
     'Front Right',
@@ -139,11 +133,6 @@ class _TyresScreenState extends State<TyresScreen> {
     'Rear Right',
     'Spare Tire',
   ];
-
-  // ================================================================
-  // STEPS
-  // ================================================================
-
   final List<String> steps = [
     'Vehicle Info',
     'Tyres',
@@ -160,41 +149,246 @@ class _TyresScreenState extends State<TyresScreen> {
     'Comments',
   ];
 
-  // ================================================================
-  // BUILD
-  // ================================================================
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<InspectionDetailsBloc>().add(
+        GetInspectionDataFieldsEvent(
+          vehicleId: widget.vehicleId,
+          typeItemId: widget.typeItemId,
+        ),
+      );
+    });
+  }
+
+  List<Map<String, dynamic>> get inspectionCategories {
+    final state = context.read<InspectionDetailsBloc>().state;
+    if (state is! InspectionDetailsLoaded) return [];
+    final categories = state.model.data?.categories ?? [];
+    return categories
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  List<String> getCategoryItems(String categoryName) {
+    for (final category in inspectionCategories) {
+      final categoryData = category['categoryId'];
+      if (categoryData is! Map) continue;
+      final name = categoryData['name']?.toString().toLowerCase().trim();
+      if (name != categoryName.toLowerCase().trim()) continue;
+      final items = category['items'];
+      if (items is! List) return [];
+      return items
+          .whereType<Map>()
+          .map((entry) {
+            final item = entry['itemId'];
+            return item is Map ? item['name']?.toString() ?? '' : '';
+          })
+          .where((name) => name.isNotEmpty)
+          .toList();
+    }
+    return [];
+  }
+
+  String? _readId(dynamic value) {
+    if (value is Map) {
+      final id =
+          value['_id'] ??
+          value['id'] ??
+          value['category_id'] ??
+          value['item_id'];
+      return id?.toString();
+    }
+    return value?.toString();
+  }
+
+  Future<void> _submitInspection() async {
+    if (isSubmitting) return;
+    final categories = inspectionCategories;
+    if (categories.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No inspection categories available.')),
+      );
+      return;
+    }
+
+    final List<InspectionRemark> remarks = [];
+    for (final category in categories) {
+      final categoryId = _readId(category['categoryId']);
+      if (categoryId == null || categoryId.isEmpty || categoryId == 'null') {
+        continue;
+      }
+      final rawItems = category['items'];
+      if (rawItems is! List) continue;
+      final List<InspectionItem> items = [];
+
+      for (final entry in rawItems) {
+        if (entry is! Map) continue;
+        final itemData = entry['itemId'];
+        final itemId = _readId(itemData);
+        if (itemId == null || itemId.isEmpty || itemId == 'null') continue;
+        final itemName = itemData is Map
+            ? itemData['name']?.toString() ?? ''
+            : '';
+        final savedStatus = itemStatus[itemName] ?? 'NC';
+        final apiStatus = switch (savedStatus.toLowerCase()) {
+          'pass' => 'Pass',
+          'fail' => 'Fail',
+          'nc' => 'NC',
+          _ => 'NC',
+        };
+        items.add(
+          InspectionItem(
+            itemId: itemId,
+            status: apiStatus,
+            comment: inspectionComment.trim().isEmpty
+                ? null
+                : inspectionComment.trim(),
+          ),
+        );
+      }
+      if (items.isNotEmpty) {
+        remarks.add(InspectionRemark(categoryId: categoryId, items: items));
+      }
+    }
+
+    if (remarks.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No valid inspection items were found.')),
+      );
+      return;
+    }
+
+    setState(() => isSubmitting = true);
+    final model = InspectionSubmitModel(
+      customerId: widget.customerId,
+      vehicleId: widget.vehicleId,
+      inspectionTypeId: widget.typeItemId,
+      status: 'Draft',
+      remarks: remarks,
+    );
+    context.read<InspectionSubmitBloc>().add(
+      SubmitInspectionEvent(inspection: model),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bool isSuspensionStep = selectedStep == 4;
+    return BlocBuilder<InspectionDetailsBloc, InspectionDetailsState>(
+      builder: (context, state) {
+        if (state is InspectionDetailsLoading ||
+            state is InspectionDetailsInitial) {
+          return const Scaffold(
+            backgroundColor: Colors.white,
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (state is InspectionDetailsError) {
+          return Scaffold(
+            backgroundColor: Colors.white,
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24.w),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline,
+                        color: Colors.red,
+                        size: 42,
+                      ),
+                      SizedBox(height: 12.h),
+                      Text(state.message, textAlign: TextAlign.center),
+                      SizedBox(height: 16.h),
+                      ElevatedButton(
+                        onPressed: () =>
+                            context.read<InspectionDetailsBloc>().add(
+                              GetInspectionDataFieldsEvent(
+                                vehicleId: widget.vehicleId,
+                                typeItemId: widget.typeItemId,
+                              ),
+                            ),
+                        child: const Text('Retry'),
+                      ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Back'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        if (state is InspectionDetailsLoaded) {
+          return BlocListener<InspectionSubmitBloc, InspectionSubmitState>(
+            listener: (context, submitState) {
+              if (submitState is InspectionSubmitLoading) {
+                if (mounted) setState(() => isSubmitting = true);
+              } else if (submitState is InspectionSubmitSuccess) {
+                if (mounted) setState(() => isSubmitting = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Inspection draft saved successfully.'),
+                  ),
+                );
+              } else if (submitState is InspectionSubmitFailure) {
+                if (mounted) setState(() => isSubmitting = false);
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(submitState.message)));
+              }
+            },
+            child: _buildInspectionScreen(),
+          );
+        }
+        return const Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(child: CircularProgressIndicator()),
+        );
+      },
+    );
+  }
 
-    // Interior & Exterior is index 5 in your steps list.
-    final bool isInteriorExteriorStep = selectedStep == 5;
-    final bool isElectricalStep = selectedStep == 6;
-    final bool isExteriorStep = selectedStep == 7;
-    final bool isEngineStep = selectedStep == 8;
-    final bool isTransmissionStep = selectedStep == 9;
-    final bool isChasisStep = selectedStep == 10;
-    final bool isGeneralPhotosStep = selectedStep == 11;
-    final bool isCommentStep = selectedStep == 12;
+  Widget _buildInspectionScreen() {
+    final isSuspensionStep = selectedStep == 4;
+    final isInteriorExteriorStep = selectedStep == 5;
+    final isElectricalStep = selectedStep == 6;
+    final isExteriorStep = selectedStep == 7;
+    final isEngineStep = selectedStep == 8;
+    final isTransmissionStep = selectedStep == 9;
+    final isChasisStep = selectedStep == 10;
+    final isGeneralPhotosStep = selectedStep == 11;
+    final isCommentStep = selectedStep == 12;
+
+    final apiTyres = getCategoryItems('tyres');
+    final displayTyres = apiTyres.isNotEmpty ? apiTyres : tyreList;
+    if (!displayTyres.contains(selectedTyre)) {
+      selectedTyre = displayTyres.isNotEmpty
+          ? displayTyres.first
+          : 'Front Left';
+    }
+    final apiInteriorItems = getCategoryItems('interior');
+    final apiExteriorItems = getCategoryItems('exterior');
+    final displayInteriorExteriorItems = [
+      ...apiInteriorItems,
+      ...apiExteriorItems,
+    ];
 
     return Scaffold(
       backgroundColor: Colors.white,
-
       body: SafeArea(
         child: Column(
           children: [
-            // ==========================================================
-            // TOP STEPPER
-            // ==========================================================
             Padding(
               padding: EdgeInsets.only(left: 18.w, right: 18.w, top: 18.h),
-              child: _buildTopStepper(),
+              child: _buildProgressIndicator(),
             ),
-
-            // ==========================================================
-            // MAIN CONTENT
-            // ==========================================================
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(horizontal: 10.w),
@@ -202,10 +396,6 @@ class _TyresScreenState extends State<TyresScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(height: 27.h),
-
-                    // ==================================================
-                    // CURRENT STEP TITLE
-                    // ==================================================
                     Text(
                       steps[selectedStep],
                       style: TextStyle(
@@ -216,99 +406,58 @@ class _TyresScreenState extends State<TyresScreen> {
                         color: const Color(0xFF111111),
                       ),
                     ),
-
                     SizedBox(height: 20.h),
-
-                    // ==================================================
-                    // INTERIOR & EXTERIOR
-                    // ==================================================
                     if (isInteriorExteriorStep)
                       InteriorExterior(
                         engineUpperCoverStatus: engineUpperCoverStatus,
-
-                        onEngineUpperCoverStatusChanged: (status) {
-                          setState(() {
-                            engineUpperCoverStatus = status;
-                          });
-                        },
-
-                        interiorExteriorItems: interiorExteriorItems,
-
+                        onEngineUpperCoverStatusChanged: (status) =>
+                            setState(() => engineUpperCoverStatus = status),
+                        interiorExteriorItems:
+                            displayInteriorExteriorItems.isNotEmpty
+                            ? displayInteriorExteriorItems
+                            : interiorExteriorItems,
                         itemStatus: itemStatus,
-
-                        onItemTap: (item) {
-                          setState(() {
-                            // You can handle item selection here.
-                            itemStatus[item] = 'Selected';
-                          });
-                        },
+                        onItemTap: (item) =>
+                            setState(() => itemStatus[item] = 'Selected'),
                       )
                     else if (isElectricalStep)
                       Electrical(
                         engineUpperCoverStatus: engineUpperCoverStatus,
-
-                        onEngineUpperCoverStatusChanged: (status) {
-                          setState(() {
-                            engineUpperCoverStatus = status;
-                          });
-                        },
-
+                        onEngineUpperCoverStatusChanged: (status) =>
+                            setState(() => engineUpperCoverStatus = status),
                         ElectricalItems: ElectricalItems,
-
                         itemStatus: itemStatus,
-
-                        onItemTap: (item) {
-                          setState(() {
-                            // You can handle item selection here.
-                            itemStatus[item] = 'Selected';
-                          });
-                        },
+                        onItemTap: (item) =>
+                            setState(() => itemStatus[item] = 'Selected'),
                       )
                     else if (isTransmissionStep)
                       TransmissionScreen(
                         engineUpperCoverStatus: engineUpperCoverStatus,
-
-                        onEngineUpperCoverStatusChanged: (status) {
-                          setState(() {
-                            engineUpperCoverStatus = status;
-                          });
-                        },
-
+                        onEngineUpperCoverStatusChanged: (status) =>
+                            setState(() => engineUpperCoverStatus = status),
                         TransmissionItems: TransmissionItems,
-
                         itemStatus: itemStatus,
-
-                        onItemTap: (item) {
-                          setState(() {
-                            // You can handle item selection here.
-                            itemStatus[item] = 'Selected';
-                          });
-                        },
+                        onItemTap: (item) =>
+                            setState(() => itemStatus[item] = 'Selected'),
                       )
                     else if (isEngineStep)
                       EngineScreen()
                     else if (isCommentStep)
-                      CommentScreen()
+                      CommentScreen(
+                        initialComment: inspectionComment,
+                        onCommentChanged: (value) => inspectionComment = value,
+                      )
                     else if (isGeneralPhotosStep)
                       GeneralPhotos()
-                    // ==================================================
-                    // SUSPENSION
-                    // ==================================================
                     else if (isSuspensionStep)
                       _buildSuspensionInspection()
                     else if (isExteriorStep)
                       ExteriorScreen(
-                        // ==================================================
-                        // ALL OTHER STEPS
-                        // ==================================================
                         onItemTap: (String value) {},
                         ExteriorItems: ExteriorItems,
                       )
                     else if (isChasisStep)
                       ChasisScreen(
-                        // ==================================================
-                        // ALL OTHER STEPS
-                        // ==================================================
                         onItemTap: (String value) {},
                         ExteriorItems: ChasisItems,
                       )
@@ -323,27 +472,18 @@ class _TyresScreenState extends State<TyresScreen> {
                           color: const Color(0xFF000000).withOpacity(0.62),
                         ),
                       ),
-
                       SizedBox(height: 12.h),
-
                       Wrap(
                         spacing: 10.w,
                         runSpacing: 8.h,
-                        children: tyreList.map((tyre) {
-                          return _buildTyreCard(tyre);
-                        }).toList(),
+                        children: displayTyres.map(_buildTyreCard).toList(),
                       ),
                     ],
-
                     SizedBox(height: 80.h),
                   ],
                 ),
               ),
             ),
-
-            // ==========================================================
-            // BOTTOM BUTTONS
-            // ==========================================================
             _buildBottomButtons(),
           ],
         ),
@@ -351,20 +491,11 @@ class _TyresScreenState extends State<TyresScreen> {
     );
   }
 
-  // ================================================================
-  // TOP STEPPER
-  // ================================================================
-
-  Widget _buildTopStepper() {
-    return _buildProgressIndicator();
-  }
-
   Widget _buildSuspensionInspection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(height: 15.h),
-
         if (!showBackSuspensionContainers) ...[
           Text(
             'Front Suspension',
@@ -376,13 +507,9 @@ class _TyresScreenState extends State<TyresScreen> {
               color: const Color(0xFF000000).withOpacity(0.62),
             ),
           ),
-
           SizedBox(height: 12.h),
-
           _buildSuspensionButtons(isFront: true),
-
           SizedBox(height: 50.h),
-
           Text(
             'Back Suspension',
             style: TextStyle(
@@ -393,22 +520,16 @@ class _TyresScreenState extends State<TyresScreen> {
               color: const Color(0xFF000000).withOpacity(0.62),
             ),
           ),
-
           SizedBox(height: 12.h),
-
           _buildSuspensionButtons(isFront: false),
         ],
-
         if (showBackSuspensionContainers) ...[
           SizedBox(height: 20.h),
-
           Row(
             children: [
-              _Suspensioncontainers("Front"),
-
+              _Suspensioncontainers('Front'),
               SizedBox(width: 10.w),
-
-              _Suspensioncontainers("Back"),
+              _Suspensioncontainers('Back'),
             ],
           ),
         ],
@@ -417,14 +538,8 @@ class _TyresScreenState extends State<TyresScreen> {
   }
 
   Widget _buildSuspensionButtons({required bool isFront}) {
-    final bool failSelected = isFront
-        ? frontSuspensionFail
-        : backSuspensionFail;
-
-    final bool passSelected = isFront
-        ? frontSuspensionPass
-        : backSuspensionPass;
-
+    final failSelected = isFront ? frontSuspensionFail : backSuspensionFail;
+    final passSelected = isFront ? frontSuspensionPass : backSuspensionPass;
     return Row(
       children: [
         Expanded(
@@ -433,39 +548,33 @@ class _TyresScreenState extends State<TyresScreen> {
             isSelected: failSelected,
             selectedColor: const Color(0x40E90000),
             icon: Icons.cancel_outlined,
-            onTap: () {
-              setState(() {
-                if (isFront) {
-                  frontSuspensionFail = true;
-                  frontSuspensionPass = false;
-                } else {
-                  backSuspensionFail = true;
-                  backSuspensionPass = false;
-                }
-              });
-            },
+            onTap: () => setState(() {
+              if (isFront) {
+                frontSuspensionFail = true;
+                frontSuspensionPass = false;
+              } else {
+                backSuspensionFail = true;
+                backSuspensionPass = false;
+              }
+            }),
           ),
         ),
-
         SizedBox(width: 8.w),
-
         Expanded(
           child: _buildSuspensionButton(
             text: 'Pass',
             isSelected: passSelected,
             selectedColor: const Color(0xFFD1FF91),
             icon: Icons.check_circle_outline,
-            onTap: () {
-              setState(() {
-                if (isFront) {
-                  frontSuspensionPass = true;
-                  frontSuspensionFail = false;
-                } else {
-                  backSuspensionPass = true;
-                  backSuspensionFail = false;
-                }
-              });
-            },
+            onTap: () => setState(() {
+              if (isFront) {
+                frontSuspensionPass = true;
+                frontSuspensionFail = false;
+              } else {
+                backSuspensionPass = true;
+                backSuspensionFail = false;
+              }
+            }),
           ),
         ),
       ],
@@ -483,23 +592,17 @@ class _TyresScreenState extends State<TyresScreen> {
       onTap: onTap,
       child: Container(
         height: 38.h,
-
         constraints: BoxConstraints(maxWidth: 180.w),
-
         padding: EdgeInsets.symmetric(horizontal: 37.w, vertical: 6.h),
-
         decoration: BoxDecoration(
           color: isSelected ? selectedColor : const Color(0xFFF5F5F5),
           borderRadius: BorderRadius.circular(13.r),
         ),
-
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 16.sp, color: const Color(0xFF222222)),
-
             SizedBox(width: 8.w),
-
             Text(
               text,
               style: TextStyle(
@@ -517,14 +620,9 @@ class _TyresScreenState extends State<TyresScreen> {
   }
 
   Widget _buildTyreCard(String tyreName) {
-    final bool isSelected = selectedTyre == tyreName;
-
+    final isSelected = selectedTyre == tyreName;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          selectedTyre = tyreName;
-        });
-      },
+      onTap: () => setState(() => selectedTyre = tyreName),
       child: Container(
         width: 178.w,
         height: 57.h,
@@ -535,21 +633,20 @@ class _TyresScreenState extends State<TyresScreen> {
         ),
         child: Row(
           children: [
-            Text(
-              tyreName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: 'Manrope',
-                fontWeight: FontWeight.w500,
-                fontSize: 12.sp,
-                height: 1.0,
-                color: isSelected ? Colors.white : const Color(0xFF222222),
+            Expanded(
+              child: Text(
+                tyreName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12.sp,
+                  height: 1.0,
+                  color: isSelected ? Colors.white : const Color(0xFF222222),
+                ),
               ),
             ),
-
-            SizedBox(width: 8.w),
-
             if (isSelected)
               Container(
                 width: 18.w,
@@ -562,9 +659,7 @@ class _TyresScreenState extends State<TyresScreen> {
                 alignment: Alignment.center,
                 child: Icon(Icons.check, size: 13.sp, color: Colors.white),
               ),
-
-            const Spacer(),
-
+            SizedBox(width: 8.w),
             Icon(
               Icons.arrow_forward_ios,
               size: 14.sp,
@@ -576,10 +671,6 @@ class _TyresScreenState extends State<TyresScreen> {
     );
   }
 
-  // ================================================================
-  // BOTTOM BUTTONS
-  // ================================================================
-
   Widget _buildBottomButtons() {
     return Container(
       width: double.infinity,
@@ -587,16 +678,11 @@ class _TyresScreenState extends State<TyresScreen> {
       padding: EdgeInsets.only(left: 12.w, right: 12.w, top: 8.h, bottom: 10.h),
       child: Row(
         children: [
-          // ==========================================================
-          // BACK
-          // ==========================================================
           SizedBox(
             width: 94.w,
             height: 52.h,
             child: OutlinedButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
+              onPressed: () => Navigator.pop(context),
               style: OutlinedButton.styleFrom(
                 backgroundColor: Colors.white,
                 side: BorderSide(
@@ -620,85 +706,75 @@ class _TyresScreenState extends State<TyresScreen> {
               ),
             ),
           ),
-
           SizedBox(width: 8.w),
-
-          // ==========================================================
-          // CONTINUE
-          // ==========================================================
           Expanded(
             child: SizedBox(
               height: 52.h,
               child: ElevatedButton(
-                onPressed: () {
-                  // ==================================================
-                  // SUSPENSION
-                  // ==================================================
-
-                  if (selectedStep == 4) {
-                    if (!showBackSuspensionContainers) {
-                      // First Continue:
-                      // Show Front & Back containers.
-                      setState(() {
-                        showBackSuspensionContainers = true;
-                      });
-                    } else {
-                      // Second Continue:
-                      // Open existing popup.
-                      showTyrePopup(context, selectedTyre, showremark: true);
-                    }
-                  }
-                  // ==================================================
-                  // BRAKE
-                  // ==================================================
-                  else if (selectedStep == 3) {
-                    showTyrePopup(
-                      context,
-                      selectedTyre,
-                      showBreakContainers: true,
-                    );
-                  }
-                  // ==================================================
-                  // INTERIOR & EXTERIOR
-                  // ==================================================
-                  else if (selectedStep == 6) {
-                    showTyrePopup(context, selectedTyre, showremark: true);
-                    // The Interior & Exterior UI is already
-                    // displayed on this screen.
-                    //
-                    // Continue simply moves to the next step.
-
-                    setState(() {
-                      if (selectedStep < steps.length - 1) {
-                        selectedStep++;
-                      }
-                    });
-                  }
-                  // ==================================================
-                  // OTHER STEPS
-                  // ==================================================
-                  else {
-                    showTyrePopup(context, selectedTyre);
-                  }
-                },
+                onPressed: isSubmitting
+                    ? null
+                    : () {
+                        if (selectedStep == steps.length - 1) {
+                          _submitInspection();
+                          return;
+                        }
+                        if (selectedStep == 4) {
+                          if (!showBackSuspensionContainers) {
+                            setState(() => showBackSuspensionContainers = true);
+                          } else {
+                            showTyrePopup(
+                              context,
+                              selectedTyre,
+                              showremark: true,
+                            );
+                          }
+                        } else if (selectedStep == 3) {
+                          showTyrePopup(
+                            context,
+                            selectedTyre,
+                            showBreakContainers: true,
+                          );
+                        } else if (selectedStep == 5) {
+                          showTyrePopup(
+                            context,
+                            selectedTyre,
+                            showremark: true,
+                          );
+                          setState(() {
+                            if (selectedStep < steps.length - 1) selectedStep++;
+                          });
+                        } else {
+                          showTyrePopup(context, selectedTyre);
+                        }
+                      },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF73F700),
+                  disabledBackgroundColor: const Color(0xFFB8B8B8),
                   elevation: 0,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(46.r),
                   ),
                   padding: EdgeInsets.zero,
                 ),
-                child: Text(
-                  'Continue',
-                  style: TextStyle(
-                    fontFamily: 'Source Code Pro',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16.sp,
-                    height: 1,
-                    color: Colors.black,
-                  ),
-                ),
+                child: isSubmitting
+                    ? SizedBox(
+                        width: 22.w,
+                        height: 22.w,
+                        child: const CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.black,
+                        ),
+                      )
+                    : Text(
+                        'Continue',
+                        style: TextStyle(
+                          fontFamily: 'Source Code Pro',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16.sp,
+                          height: 1,
+                          color: Colors.black,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -707,13 +783,8 @@ class _TyresScreenState extends State<TyresScreen> {
     );
   }
 
-  // ================================================================
-  // PROGRESS INDICATOR
-  // ================================================================
-
   Widget _buildProgressIndicator() {
     final double stepWidth = 105.w;
-
     return SizedBox(
       height: 58.h,
       child: SingleChildScrollView(
@@ -722,22 +793,17 @@ class _TyresScreenState extends State<TyresScreen> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: List.generate(steps.length, (index) {
-            final bool isLast = index == steps.length - 1;
-
+            final isLast = index == steps.length - 1;
             final StepType stepType = index < selectedStep
                 ? StepType.completed
                 : index == selectedStep
                 ? StepType.current
                 : StepType.inactive;
-
             return SizedBox(
               width: stepWidth,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  // =================================================
-                  // STEP CIRCLE
-                  // =================================================
                   Align(
                     alignment: Alignment.topCenter,
                     child: Container(
@@ -763,7 +829,6 @@ class _TyresScreenState extends State<TyresScreen> {
                           : null,
                     ),
                   ),
-
                   if (!isLast)
                     Positioned(
                       top: 15.5.h,
@@ -776,10 +841,6 @@ class _TyresScreenState extends State<TyresScreen> {
                             : const Color(0xFFD1D1D1),
                       ),
                     ),
-
-                  // =================================================
-                  // STEP LABEL
-                  // =================================================
                   Positioned(
                     top: 38.h,
                     left: 0,
@@ -811,26 +872,15 @@ class _TyresScreenState extends State<TyresScreen> {
     );
   }
 
-  // ================================================================
-  // STEP COLOR
-  // ================================================================
-
   Color _colorofcontainers(StepType type) {
     switch (type) {
       case StepType.completed:
         return const Color(0xFF73F700);
-
       case StepType.current:
-        return const Color(0xFFE8E8E8);
-
       case StepType.inactive:
         return const Color(0xFFE8E8E8);
     }
   }
-
-  // ================================================================
-  // SHOW TYRE POPUP
-  // ================================================================
 
   void showTyrePopup(
     BuildContext context,
@@ -845,39 +895,23 @@ class _TyresScreenState extends State<TyresScreen> {
       barrierColor: Colors.black.withOpacity(0.45),
       isDismissible: true,
       enableDrag: true,
-      builder: (context) {
-        return FrontLeftPopup(
-          tyreName: tyreName,
-
-          onSave: () {
-            setState(() {
-              if (selectedStep < steps.length - 1) {
-                selectedStep++;
-              }
-            });
-          },
-
-          showBreakContainers: showBreakContainers,
-
-          showremark: showremark,
-        );
-      },
+      builder: (context) => FrontLeftPopup(
+        tyreName: tyreName,
+        onSave: () {
+          setState(() {
+            if (selectedStep < steps.length - 1) selectedStep++;
+          });
+        },
+        showBreakContainers: showBreakContainers,
+        showremark: showremark,
+      ),
     );
   }
 
-  // ================================================================
-  // SUSPENSION CONTAINER
-  // ================================================================
-
   Widget _Suspensioncontainers(String title) {
-    final bool isSelected = selectedSuspension == title;
-
+    final isSelected = selectedSuspension == title;
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          selectedSuspension = title;
-        });
-      },
+      onTap: () => setState(() => selectedSuspension = title),
       child: Container(
         padding: EdgeInsets.only(
           top: 10.h,
@@ -899,12 +933,10 @@ class _TyresScreenState extends State<TyresScreen> {
                 color: isSelected ? const Color(0xFFD1FF91) : Colors.black,
                 fontWeight: FontWeight.w600,
                 fontSize: 14.sp,
-                fontFamily: "Manrope",
+                fontFamily: 'Manrope',
               ),
             ),
-
             SizedBox(width: 10.w),
-
             if (isSelected)
               Container(
                 width: 18.w,
@@ -920,9 +952,7 @@ class _TyresScreenState extends State<TyresScreen> {
                   color: const Color(0xFFF5F5F5),
                 ),
               ),
-
             const Spacer(),
-
             Icon(
               Icons.arrow_forward_ios,
               size: 14.sp,
@@ -936,9 +966,5 @@ class _TyresScreenState extends State<TyresScreen> {
     );
   }
 }
-
-// ================================================================
-// STEP TYPE
-// ================================================================
 
 enum StepType { completed, current, inactive }

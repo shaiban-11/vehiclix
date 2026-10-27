@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rootysysproject/utils/App_constants.dart';
 
 class ApiClient {
@@ -19,7 +20,6 @@ class ApiClient {
 
   Uri _buildUri(String endpoint, {Map<String, dynamic>? queryParameters}) {
     final baseUrl = AppConstants.baseUrl.replaceFirst(RegExp(r'/+$'), '');
-
     final cleanEndpoint = endpoint.replaceAll(RegExp(r'^/+'), '');
 
     final uri = Uri.parse('$baseUrl/$cleanEndpoint');
@@ -37,6 +37,26 @@ class ApiClient {
     });
 
     return uri.replace(queryParameters: params);
+  }
+
+  // --------------------------------------------------
+  // LOAD SAVED TOKEN
+  // --------------------------------------------------
+
+  Future<String?> _getSavedToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+
+      if (token != null && token.trim().isNotEmpty) {
+        return token.trim();
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('TOKEN: Unable to read saved token: $e');
+      return null;
+    }
   }
 
   // --------------------------------------------------
@@ -67,17 +87,17 @@ class ApiClient {
   // --------------------------------------------------
 
   dynamic _decodeResponse(http.Response response) {
-    final body = response.body.trim();
+    final responseBody = response.body.trim();
 
     dynamic decoded;
 
-    if (body.isEmpty) {
+    if (responseBody.isEmpty) {
       decoded = null;
     } else {
       try {
-        decoded = jsonDecode(body);
+        decoded = jsonDecode(responseBody);
       } on FormatException {
-        decoded = body;
+        decoded = responseBody;
       }
     }
 
@@ -104,7 +124,7 @@ class ApiClient {
   }
 
   // --------------------------------------------------
-  // COMMON REQUEST
+  // COMMON API REQUEST
   // --------------------------------------------------
 
   Future<dynamic> _request({
@@ -116,9 +136,14 @@ class ApiClient {
   }) async {
     final uri = _buildUri(endpoint, queryParameters: queryParameters);
 
+    // Load token from SharedPreferences if authentication is required.
+    if (includeAuth && (accessToken == null || accessToken!.trim().isEmpty)) {
+      accessToken = await _getSavedToken();
+    }
+
     final headers = _headers(includeAuth: includeAuth);
 
-    // Debug information; never print the actual token.
+    // Debug information. Never print the actual token.
     debugPrint('API METHOD: ${method.toUpperCase()}');
     debugPrint('API URL: $uri');
     debugPrint('AUTH ENABLED: $includeAuth');
@@ -179,7 +204,7 @@ class ApiClient {
     required String ip,
     required String device,
   }) async {
-    // Login must not send an old authentication token.
+    // Login request does not require an existing token.
     final result = await _request(
       method: 'POST',
       endpoint: AppConstants.loginEndpoint,
@@ -192,20 +217,29 @@ class ApiClient {
 
       dynamic token;
 
+      // Token inside data.
       if (data is Map) {
         token = data['accessToken'] ?? data['access_token'] ?? data['token'];
       }
 
-      // Some APIs return the token at the top level.
+      // Token at the top level.
       token ??=
           result['accessToken'] ?? result['access_token'] ?? result['token'];
 
       if (token is String && token.trim().isNotEmpty) {
         accessToken = token.trim();
-        debugPrint('LOGIN: access token saved');
+
+        final prefs = await SharedPreferences.getInstance();
+
+        await prefs.setString('auth_token', accessToken!);
+
+        debugPrint('LOGIN: Access token saved successfully');
       } else {
         accessToken = null;
-        debugPrint('LOGIN: token not found. Check the actual login response.');
+
+        debugPrint(
+          'LOGIN: Token not found. Check the login response structure.',
+        );
       }
     }
 
@@ -309,6 +343,16 @@ class ApiClient {
   // CUSTOMERS
   // --------------------------------------------------
 
+  // CREATE CUSTOMER
+  Future<dynamic> createCustomer({required Map<String, dynamic> body}) {
+    return _request(
+      method: 'POST',
+      endpoint: AppConstants.CustomerEndpoint,
+      body: body,
+    );
+  }
+
+  // GET CUSTOMERS
   Future<dynamic> getCustomers({int page = 1, int limit = 10}) {
     return _request(
       method: 'GET',
@@ -317,6 +361,7 @@ class ApiClient {
     );
   }
 
+  // GET CUSTOMER BY ID
   Future<dynamic> getCustomerById(String customerId) {
     final endpoint = AppConstants.CustomerbyidEndpoint.replaceFirst(
       ':id',
@@ -326,14 +371,12 @@ class ApiClient {
     return _request(method: 'GET', endpoint: endpoint);
   }
 
-  Future<dynamic> createCustomer(Map<String, dynamic> customerData) {
-    return _request(
-      method: 'POST',
-      endpoint: AppConstants.CustomerEndpoint,
-      body: customerData,
-    );
+  // Existing alias for customer profile requests.
+  Future<dynamic> getCustomerProfile(String customerId) {
+    return getCustomerById(customerId);
   }
 
+  // UPDATE CUSTOMER
   Future<dynamic> updateCustomer({
     required String customerId,
     required Map<String, dynamic> customerData,
@@ -366,13 +409,14 @@ class ApiClient {
 
   Future<dynamic> createCustomerVehicle({
     required String customerId,
-    required Map<String, dynamic> vehicleData,
-  }) {
-    return _request(
-      method: 'POST',
-      endpoint: _customerVehiclesEndpoint(customerId),
-      body: vehicleData,
+    required Map<String, dynamic> body,
+  }) async {
+    final endpoint = AppConstants.CustomervehiclesEndpoint.replaceAll(
+      ':customerId',
+      customerId,
     );
+
+    return _request(method: 'POST', endpoint: endpoint, body: body);
   }
 
   Future<dynamic> updateCustomerVehicle({
@@ -493,6 +537,12 @@ class ApiClient {
     );
 
     final uri = _buildUri(endpoint);
+
+    // Load saved token before uploading.
+    if (accessToken == null || accessToken!.trim().isEmpty) {
+      accessToken = await _getSavedToken();
+    }
+
     final request = http.MultipartRequest('POST', uri);
 
     request.headers.addAll(_headers(jsonContentType: false));
@@ -501,6 +551,8 @@ class ApiClient {
 
     final streamedResponse = await _client.send(request);
     final response = await http.Response.fromStream(streamedResponse);
+
+    debugPrint('UPLOAD STATUS: ${response.statusCode}');
 
     return _decodeResponse(response);
   }
@@ -515,6 +567,23 @@ class ApiClient {
       endpoint: AppConstants.HomeStatisticsEndpoint,
     );
   }
+
+  // --------------------------------------------------
+  // LOGOUT / CLEAR TOKEN
+  // --------------------------------------------------
+
+  Future<void> clearToken() async {
+    accessToken = null;
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+
+    debugPrint('AUTH: Saved token cleared');
+  }
+
+  // --------------------------------------------------
+  // CLOSE CLIENT
+  // --------------------------------------------------
 
   void close() {
     _client.close();
