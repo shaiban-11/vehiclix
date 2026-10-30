@@ -71,74 +71,29 @@ class _EngineScreenState extends State<EngineScreen> {
   ///
   /// Supports category names such as:
   /// Engine, Engine Bay, Engine & Undercarriage.
+
   List<String> _getEngineItems(InspectionDetailsState state) {
     if (state is! InspectionDetailsLoaded) {
       return _defaultEngineItems;
     }
 
-    final categories = state.model.data?.categories;
-
-    if (categories == null || categories.isEmpty) {
-      return _defaultEngineItems;
-    }
+    final categories = state.model.data?.categories ?? [];
 
     for (final category in categories) {
-      if (category is! Map) continue;
-
-      final categoryInfo = category['categoryId'];
-
-      String categoryName = '';
-
-      if (categoryInfo is Map) {
-        categoryName = (categoryInfo['name'] ?? '').toString();
-      } else if (categoryInfo is String) {
-        categoryName = categoryInfo;
-      }
-
-      // Some API responses may put the name directly on the category.
-      if (categoryName.isEmpty) {
-        categoryName = (category['name'] ?? '').toString();
-      }
-
-      final normalizedName = categoryName.toLowerCase();
+      final categoryName =
+          category.categoryId?.name?.toLowerCase().trim() ?? '';
 
       final isEngineCategory =
-          normalizedName.contains('engine') ||
-          normalizedName.contains('underhood') ||
-          normalizedName.contains('under hood');
+          categoryName.contains('engine') ||
+          categoryName.contains('underhood') ||
+          categoryName.contains('under hood');
 
       if (!isEngineCategory) continue;
 
-      final rawItems = category['items'];
-
-      if (rawItems is! List || rawItems.isEmpty) {
-        continue;
-      }
-
-      final List<String> items = [];
-
-      for (final item in rawItems) {
-        if (item is! Map) continue;
-
-        final itemInfo = item['itemId'];
-
-        String itemName = '';
-
-        if (itemInfo is Map) {
-          itemName = (itemInfo['name'] ?? '').toString();
-        } else if (itemInfo is String) {
-          // A string ID does not contain the item's display name.
-          itemName = (item['name'] ?? '').toString();
-        }
-
-        if (itemName.isEmpty) {
-          itemName = (item['name'] ?? '').toString();
-        }
-
-        if (itemName.trim().isNotEmpty) {
-          items.add(itemName.trim());
-        }
-      }
+      final items = category.items
+          .map((entry) => entry.itemId?.name?.trim() ?? '')
+          .where((name) => name.isNotEmpty)
+          .toList();
 
       if (items.isNotEmpty) {
         return items;

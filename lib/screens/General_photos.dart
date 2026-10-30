@@ -28,39 +28,23 @@ class _GeneralPhotosState extends State<GeneralPhotos> {
       return _fallbackCategories;
     }
 
-    final categories = state.model.data?.categories;
-
-    if (categories == null || categories.isEmpty) {
-      return _fallbackCategories;
-    }
-
+    final categories = state.model.data?.categories ?? [];
     final List<String> apiCategories = [];
 
     for (final category in categories) {
-      if (category is! Map) continue;
+      final categoryName = category.categoryId?.name?.trim() ?? '';
+      final normalizedName = categoryName.toLowerCase();
 
-      final categoryId = category['categoryId'];
+      final isPhotoCategory =
+          normalizedName == 'exterior' ||
+          normalizedName == 'interior' ||
+          normalizedName.contains('engine bay') ||
+          normalizedName.contains('undercarriage');
 
-      String categoryName = '';
-
-      if (categoryId is Map) {
-        categoryName = (categoryId['name'] ?? '').toString();
-      } else if (categoryId is String) {
-        categoryName = categoryId;
-      }
-
-      if (categoryName.trim().isNotEmpty) {
-        final normalizedName = categoryName.trim().toLowerCase();
-
-        // General photo categories only.
-        if (normalizedName == 'exterior' ||
-            normalizedName == 'interior' ||
-            normalizedName.contains('engine bay') ||
-            normalizedName.contains('undercarriage')) {
-          if (!apiCategories.contains(categoryName.trim())) {
-            apiCategories.add(categoryName.trim());
-          }
-        }
+      if (isPhotoCategory &&
+          categoryName.isNotEmpty &&
+          !apiCategories.contains(categoryName)) {
+        apiCategories.add(categoryName);
       }
     }
 

@@ -119,24 +119,30 @@ class _SelectInspectionBottomSheetState
                           image,
                           name,
                           onTap: () {
+                            debugPrint('Tapped inspection: $name');
+                            debugPrint('Inspection ID: ${inspection.id}');
+
+                            if (inspection.id == null) {
+                              debugPrint('Inspection ID is null');
+                              return;
+                            }
+
                             if (normalizedName.contains('full inspection') ||
                                 normalizedName.contains('full inspect')) {
                               widget.onFullInspectionTap();
-
-                              // Replace these with the actual IDs from your app.
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => TyresScreen(
-                                    vehicleId: widget.vehicleid,
-                                    typeItemId: inspection.id.toString(),
-                                    customerId: widget.customerid,
-                                    inspectionId: widget.inspectionId
-                                        .toString(),
-                                  ),
-                                ),
-                              );
                             }
+
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => TyresScreen(
+                                  vehicleId: widget.vehicleid,
+                                  typeItemId: inspection.id.toString(),
+                                  customerId: widget.customerid,
+                                  inspectionId: widget.inspectionId ?? '',
+                                ),
+                              ),
+                            );
                           },
                         );
                       },

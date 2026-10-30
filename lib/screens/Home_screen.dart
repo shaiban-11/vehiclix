@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:rootysysproject/bloc/inspectiondetail/bloc/inspectiondetail_bloc.dart';
+import 'package:rootysysproject/bloc/inspectiondetail/bloc/inspectiondetail_event.dart';
+import 'package:rootysysproject/repositories/Api/inspectiondetails_api.dart';
 
 import 'package:rootysysproject/repositories/Api/api_client.dart';
 
@@ -11,10 +14,12 @@ import 'package:rootysysproject/bloc/homestats/bloc/homestats_state.dart';
 import 'package:rootysysproject/bloc/user/bloc/user_bloc.dart';
 import 'package:rootysysproject/bloc/user/bloc/user_event.dart';
 import 'package:rootysysproject/bloc/user/bloc/user_state.dart';
+import 'package:rootysysproject/repositories/models/completeinspection_model.dart';
 
 import 'package:rootysysproject/screens/Customer_screen.dart';
 import 'package:rootysysproject/screens/Profile_screen.dart';
 import 'package:rootysysproject/screens/Tyres_screen.dart';
+import 'package:rootysysproject/screens/reportsdetails_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,6 +30,7 @@ class HomeScreen extends StatefulWidget {
 
 class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
   int selectedBottomIndex = 0;
+  List<dynamic> _inspectionTypes = [];
 
   static const Color black = Color(0xFF000000);
   static const Color darkText = Color(0xFF222222);
@@ -45,6 +51,8 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchDrafts();
+    _fetchInspectionTypes();
 
     _draftsFuture = _fetchDrafts();
     _completedFuture = _fetchCompleted();
@@ -56,6 +64,33 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
 
       context.read<HomeStatsBloc>().add(const HomeStatsFetchRequested());
     });
+  }
+
+  void _openReportDetails(Map<String, dynamic> report) {
+    final inspection = InspectionCompletedData.fromJson(report);
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FetchreportsScreen(report: inspection),
+      ),
+    );
+  }
+
+  Future<void> _fetchInspectionTypes() async {
+    try {
+      final response = await _apiClient.getInspectionTypes();
+
+      if (response is Map && response['data'] is List) {
+        if (!mounted) return;
+
+        setState(() {
+          _inspectionTypes = response['data'];
+        });
+      }
+    } catch (e) {
+      debugPrint('Inspection Types Error: $e');
+    }
   }
 
   // =========================================================
@@ -120,21 +155,54 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
   }
 
   String _getInspectionId(Map<String, dynamic> inspection) {
-    return _getId(inspection['_id'] ?? inspection['id']);
+    return _getId(
+      inspection['_id'] ?? inspection['id'] ?? inspection['inspectionId'],
+    );
   }
 
   String _getCustomerId(Map<String, dynamic> inspection) {
-    return _getId(inspection['customer_id']);
+    return _getId(inspection['customer_id'] ?? inspection['customerId']);
   }
 
   String _getVehicleId(Map<String, dynamic> inspection) {
-    return _getId(inspection['vehicle_id']);
+    return _getId(inspection['vehicle_id'] ?? inspection['vehicleId']);
   }
 
-  String _getInspectionTypeId(Map<String, dynamic> inspection) {
-    return _getId(
-      inspection['inspection_type_id'] ?? inspection['inspectionTypeId'],
-    );
+  String _getInspectionTypeId(
+    Map<String, dynamic> inspection,
+    List<dynamic> inspectionTypes,
+  ) {
+    final typeData = inspection['inspection_type_id'];
+
+    // Draft API-യിൽ ID ഉണ്ടെങ്കിൽ അത് ഉപയോഗിക്കുക.
+    if (typeData is Map) {
+      final id = (typeData['_id'] ?? typeData['id'] ?? '').toString();
+
+      if (id.isNotEmpty) {
+        return id;
+      }
+    }
+
+    // Draft API-യിൽ ID ഇല്ലെങ്കിൽ Inspection Types API നോക്കുക.
+    final typeName = typeData is Map
+        ? (typeData['name'] ?? '').toString().toLowerCase().trim()
+        : '';
+
+    final normalizedName = typeName.replaceAll(' ', '');
+
+    if (normalizedName == 'fullinspect' || normalizedName == 'fullinspection') {
+      for (final type in inspectionTypes) {
+        if (type is Map) {
+          final name = (type['name'] ?? '').toString().toLowerCase().trim();
+
+          if (name == 'full inspection') {
+            return (type['_id'] ?? '').toString();
+          }
+        }
+      }
+    }
+
+    return '';
   }
 
   // =========================================================
@@ -142,10 +210,19 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
   // =========================================================
 
   void _showInspectionMessage(Map<String, dynamic> inspection) {
+    debugPrint('========== RAW INSPECTION DATA ==========');
+    debugPrint('FULL DATA: $inspection');
+
+    debugPrint('RAW INSPECTION ID: ${inspection['_id']}');
+    debugPrint('RAW CUSTOMER ID: ${inspection['customer_id']}');
+    debugPrint('RAW VEHICLE ID: ${inspection['vehicle_id']}');
+    debugPrint('RAW INSPECTION TYPE ID: ${inspection['inspection_type_id']}');
+
+    debugPrint('=========================================');
     final inspectionId = _getInspectionId(inspection);
     final customerId = _getCustomerId(inspection);
     final vehicleId = _getVehicleId(inspection);
-    final typeItemId = _getInspectionTypeId(inspection);
+    final typeItemId = _getInspectionTypeId(inspection, _inspectionTypes);
 
     if (inspectionId.isEmpty ||
         customerId.isEmpty ||
@@ -287,13 +364,17 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
   // REFRESH INSPECTIONS
   // =========================================================
 
-  void _refreshInspections() {
+  Future<void> _refreshInspections() async {
     if (!mounted) return;
 
     setState(() {
       _draftsFuture = _fetchDrafts();
       _completedFuture = _fetchCompleted();
     });
+
+    context.read<HomeStatsBloc>().add(const HomeStatsFetchRequested());
+
+    await Future.wait([_draftsFuture, _completedFuture]);
   }
 
   @override
@@ -318,7 +399,7 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
                 : _buildHomeContent(),
           ),
           _buildBottomNavigation(),
-          if (selectedBottomIndex == 0) _buildFloatingButton(),
+          _buildFloatingButton(),
         ],
       ),
     );
@@ -329,151 +410,154 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
   // =========================================================
 
   Widget _buildHomeContent() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: EdgeInsets.only(left: 8.w, right: 8.w, top: 8.h, bottom: 95.h),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(height: 50.h),
+    return RefreshIndicator(
+      onRefresh: _refreshInspections,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.only(left: 8.w, right: 8.w, top: 8.h, bottom: 95.h),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(height: 50.h),
 
-          _buildHeader(),
+            _buildHeader(),
 
-          SizedBox(height: 30.h),
+            SizedBox(height: 30.h),
 
-          Text(
-            'Continue Inspection',
-            style: TextStyle(
-              fontFamily: 'Manrope',
-              fontSize: 16.sp,
-              fontWeight: FontWeight.w500,
-              color: grayText,
+            Text(
+              'Continue Inspection',
+              style: TextStyle(
+                fontFamily: 'Manrope',
+                fontSize: 16.sp,
+                fontWeight: FontWeight.w500,
+                color: grayText,
+              ),
             ),
-          ),
 
-          SizedBox(height: 10.h),
+            SizedBox(height: 10.h),
 
-          _buildContinueInspection(),
+            _buildContinueInspection(),
 
-          SizedBox(height: 18.h),
+            SizedBox(height: 18.h),
 
-          // =================================================
-          // HOME STATISTICS API
-          // =================================================
-          BlocBuilder<HomeStatsBloc, HomeStatsState>(
-            builder: (context, state) {
-              String today = '--';
-              String completed = '--';
-              String failed = '--';
+            // =================================================
+            // HOME STATISTICS API
+            // =================================================
+            BlocBuilder<HomeStatsBloc, HomeStatsState>(
+              builder: (context, state) {
+                String today = '--';
+                String completed = '--';
+                String failed = '--';
 
-              if (state is HomeStatsLoading) {
-                today = '...';
-                completed = '...';
-                failed = '...';
-              } else if (state is HomeStatsSuccess) {
-                final stats = state.homeStats.data;
+                if (state is HomeStatsLoading) {
+                  today = '...';
+                  completed = '...';
+                  failed = '...';
+                } else if (state is HomeStatsSuccess) {
+                  final stats = state.homeStats.data;
 
-                today = stats?.today?.toString() ?? '0';
-                completed = stats?.completed?.toString() ?? '0';
-                failed = stats?.failed?.toString() ?? '0';
-              } else if (state is HomeStatsFailure) {
-                debugPrint('HOME STATS ERROR: ${state.message}');
-              }
+                  today = stats?.today?.toString() ?? '0';
+                  completed = stats?.completed?.toString() ?? '0';
+                  failed = stats?.failed?.toString() ?? '0';
+                } else if (state is HomeStatsFailure) {
+                  debugPrint('HOME STATS ERROR: ${state.message}');
+                }
 
-              return Row(
-                children: [
-                  Expanded(
-                    child: _buildStatCard(title: 'Today', value: today),
-                  ),
-                  SizedBox(width: 8.w),
-                  Expanded(
-                    child: _buildStatCard(
-                      title: 'Completed',
-                      value: completed,
-                      titleColor: const Color(0xFF278500),
+                return Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatCard(title: 'Today', value: today),
                     ),
-                  ),
-                  SizedBox(width: 8.w),
-                  Expanded(
-                    child: _buildStatCard(
-                      title: 'Failed',
-                      value: failed,
-                      titleColor: const Color(0xFFFF2D2D),
+                    SizedBox(width: 8.w),
+                    Expanded(
+                      child: _buildStatCard(
+                        title: 'Completed',
+                        value: completed,
+                        titleColor: const Color(0xFF278500),
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
-          ),
-
-          SizedBox(height: 25.h),
-
-          // =================================================
-          // INSPECTIONS HEADING
-          // =================================================
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Inspections',
-                style: TextStyle(
-                  fontFamily: 'Manrope',
-                  fontSize: 16.sp,
-                  fontWeight: FontWeight.w500,
-                  color: grayText,
-                ),
-              ),
-              IconButton(
-                onPressed: _refreshInspections,
-                icon: const Icon(Icons.refresh),
-              ),
-            ],
-          ),
-
-          // =================================================
-          // FETCH AND DISPLAY DRAFT INSPECTIONS
-          // =================================================
-          FutureBuilder<List<Map<String, dynamic>>>(
-            future: _draftsFuture,
-            builder: (context, draftSnapshot) {
-              if (draftSnapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-
-              if (draftSnapshot.hasError) {
-                return _buildError(
-                  draftSnapshot.error.toString(),
-                  _refreshInspections,
-                );
-              }
-
-              final drafts = draftSnapshot.data ?? [];
-
-              if (drafts.isEmpty) {
-                return _buildEmpty('No draft inspections found.');
-              }
-
-              return Column(
-                children: [
-                  for (int i = 0; i < drafts.length; i++) ...[
-                    _buildInspectionCard(
-                      title: _inspectionTitle(drafts[i]),
-                      vehicle: _vehicleName(drafts[i]),
-                      status: _inspectionStatus(drafts[i]),
-                      inspection: drafts[i],
+                    SizedBox(width: 8.w),
+                    Expanded(
+                      child: _buildStatCard(
+                        title: 'Failed',
+                        value: failed,
+                        titleColor: const Color(0xFFFF2D2D),
+                      ),
                     ),
-                    if (i != drafts.length - 1) SizedBox(height: 9.h),
                   ],
-                ],
-              );
-            },
-          ),
+                );
+              },
+            ),
 
-          SizedBox(height: 100.h),
-        ],
+            SizedBox(height: 25.h),
+
+            // =================================================
+            // INSPECTIONS HEADING
+            // =================================================
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Inspections',
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.w500,
+                    color: grayText,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _refreshInspections,
+                  icon: const Icon(Icons.refresh),
+                ),
+              ],
+            ),
+
+            // =================================================
+            // FETCH AND DISPLAY DRAFT INSPECTIONS
+            // =================================================
+            FutureBuilder<List<Map<String, dynamic>>>(
+              future: _draftsFuture,
+              builder: (context, draftSnapshot) {
+                if (draftSnapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                if (draftSnapshot.hasError) {
+                  return _buildError(
+                    draftSnapshot.error.toString(),
+                    _refreshInspections,
+                  );
+                }
+
+                final drafts = draftSnapshot.data ?? [];
+
+                if (drafts.isEmpty) {
+                  return _buildEmpty('No draft inspections found.');
+                }
+
+                return Column(
+                  children: [
+                    for (int i = 0; i < drafts.length; i++) ...[
+                      _buildInspectionCard(
+                        title: _inspectionTitle(drafts[i]),
+                        vehicle: _vehicleName(drafts[i]),
+                        status: _inspectionStatus(drafts[i]),
+                        inspection: drafts[i],
+                      ),
+                      if (i != drafts.length - 1) SizedBox(height: 9.h),
+                    ],
+                  ],
+                );
+              },
+            ),
+
+            SizedBox(height: 100.h),
+          ],
+        ),
       ),
     );
   }
@@ -607,67 +691,67 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
         final vehicle = _vehicleName(inspection);
         final progress = _completionPercentage(inspection);
 
-        return Container(
-          width: double.infinity,
-          padding: EdgeInsets.all(12.w),
-          decoration: BoxDecoration(
-            color: white,
-            borderRadius: BorderRadius.circular(12.r),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                vehicle.isEmpty ? 'Vehicle Inspection' : vehicle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: 'Manrope',
-                  fontSize: 17.sp,
-                  fontWeight: FontWeight.w600,
-                  color: black,
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            _showInspectionMessage(inspection);
+          },
+          child: Container(
+            width: double.infinity,
+            padding: EdgeInsets.all(12.w),
+            decoration: BoxDecoration(
+              color: white,
+              borderRadius: BorderRadius.circular(12.r),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  vehicle.isEmpty ? 'Vehicle Inspection' : vehicle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontSize: 17.sp,
+                    fontWeight: FontWeight.w600,
+                    color: black,
+                  ),
                 ),
-              ),
 
-              SizedBox(height: 13.h),
+                SizedBox(height: 13.h),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(10.r),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        minHeight: 9.h,
-                        backgroundColor: green,
-                        valueColor: const AlwaysStoppedAnimation<Color>(
-                          progressDarkGreen,
+                Row(
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10.r),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 9.h,
+                          backgroundColor: green,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            progressDarkGreen,
+                          ),
                         ),
                       ),
                     ),
-                  ),
 
-                  SizedBox(width: 8.w),
+                    SizedBox(width: 8.w),
 
-                  Text(
-                    '${(progress * 100).round()}%',
-                    style: TextStyle(
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.w600,
-                      color: black,
+                    Text(
+                      '${(progress * 100).round()}%',
+                      style: TextStyle(
+                        fontSize: 12.sp,
+                        fontWeight: FontWeight.w600,
+                        color: black,
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
 
-              SizedBox(height: 10.h),
+                SizedBox(height: 10.h),
 
-              GestureDetector(
-                // Continue opens the selected existing draft.
-                onTap: () {
-                  _showInspectionMessage(inspection);
-                },
-                child: Row(
+                Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
@@ -697,8 +781,8 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },
@@ -770,7 +854,7 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
       ),
       child: Row(
         children: [
-          _buildVehicleImage(),
+          _buildVehicleImage(inspection),
 
           SizedBox(width: 12.w),
 
@@ -851,7 +935,21 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
   // VEHICLE IMAGE
   // =========================================================
 
-  Widget _buildVehicleImage() {
+  Widget _buildVehicleImage(Map<String, dynamic> inspection) {
+    final dynamic vehicle = inspection['vehicle_id'];
+
+    String? imageUrl;
+
+    if (vehicle is Map) {
+      imageUrl =
+          (vehicle['vehicleInfo']?['image'] ??
+                  vehicle['vehicleInfo']?['image_url'] ??
+                  vehicle['image'] ??
+                  vehicle['image_url'] ??
+                  vehicle['vehicle_image'])
+              ?.toString();
+    }
+
     return Container(
       width: 80.w,
       height: 80.h,
@@ -860,13 +958,19 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(8.r),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Image.asset(
-        'assets/images/vehicle.png',
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) {
-          return Icon(Icons.directions_car, size: 40.sp, color: Colors.grey);
-        },
-      ),
+      child: imageUrl != null && imageUrl.isNotEmpty
+          ? Image.network(
+              imageUrl,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return Icon(
+                  Icons.directions_car,
+                  size: 40.sp,
+                  color: Colors.grey,
+                );
+              },
+            )
+          : Icon(Icons.directions_car, size: 40.sp, color: Colors.grey),
     );
   }
 
@@ -922,7 +1026,7 @@ class _VehicleInspectionHomeScreenState extends State<HomeScreen> {
       onRefresh: _refreshInspections,
       buildVehicleImage: _buildVehicleImage,
       statusChip: _statusChip,
-      onSee: _showInspectionMessage,
+      onSee: _openReportDetails,
     );
   }
 
@@ -1128,7 +1232,7 @@ class _ReportsContent extends StatefulWidget {
   final String Function(Map<String, dynamic>) inspectionStatus;
 
   final VoidCallback onRefresh;
-  final Widget Function() buildVehicleImage;
+  final Widget Function(Map<String, dynamic>) buildVehicleImage;
   final Widget Function(String) statusChip;
   final void Function(Map<String, dynamic>) onSee;
 
@@ -1377,60 +1481,60 @@ class _ReportsContentState extends State<_ReportsContent> {
 
     final number = inspection['inspection_no']?.toString() ?? '';
 
-    return Container(
-      width: double.infinity,
-      height: 110.h,
-      padding: EdgeInsets.all(8.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15.r),
-      ),
-      child: Row(
-        children: [
-          widget.buildVehicleImage(),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        widget.onSee(inspection);
+      },
+      child: Container(
+        width: double.infinity,
+        height: 110.h,
+        padding: EdgeInsets.all(8.w),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15.r),
+        ),
+        child: Row(
+          children: [
+            widget.buildVehicleImage(inspection),
 
-          SizedBox(width: 11.w),
+            SizedBox(width: 11.w),
 
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  number.isEmpty ? title : '$number | $title',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontSize: 12.sp,
-                    color: const Color(0xFF808080),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    number.isEmpty ? title : '$number | $title',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 12.sp,
+                      color: const Color(0xFF808080),
+                    ),
                   ),
-                ),
 
-                Text(
-                  vehicle.isEmpty ? 'Vehicle Inspection' : vehicle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontSize: 13.sp,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black,
+                  Text(
+                    vehicle.isEmpty ? 'Vehicle Inspection' : vehicle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                    ),
                   ),
-                ),
 
-                Row(
-                  children: [
-                    widget.statusChip(status),
+                  Row(
+                    children: [
+                      widget.statusChip(status),
 
-                    const Spacer(),
+                      const Spacer(),
 
-                    GestureDetector(
-                      // Open the selected inspection.
-                      onTap: () {
-                        widget.onSee(inspection);
-                      },
-                      child: Row(
+                      Row(
                         children: [
                           Text(
                             'See',
@@ -1457,13 +1561,13 @@ class _ReportsContentState extends State<_ReportsContent> {
                           ),
                         ],
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -33,9 +33,8 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
   String? selectedTransmission;
 
   // Read transmission items from the existing inspection API response.
-  List<String> get apiTransmissionItems {
-    final state = context.read<InspectionDetailsBloc>().state;
 
+  List<String> _getApiTransmissionItems(InspectionDetailsState state) {
     if (state is! InspectionDetailsLoaded) {
       return [];
     }
@@ -43,53 +42,33 @@ class _TransmissionScreenState extends State<TransmissionScreen> {
     final categories = state.model.data?.categories ?? [];
 
     for (final category in categories) {
-      if (category is! Map) continue;
+      final categoryName =
+          category.categoryId?.name?.trim().toLowerCase() ?? '';
 
-      final categoryData = category['categoryId'];
+      if (categoryName != 'transmission') {
+        continue;
+      }
 
-      if (categoryData is! Map) continue;
-
-      final categoryName = categoryData['name']
-          ?.toString()
-          .toLowerCase()
-          .trim();
-
-      if (categoryName != 'transmission') continue;
-
-      final items = category['items'];
-
-      if (items is! List) return [];
-
-      return items
-          .whereType<Map>()
-          .map((entry) {
-            final itemData = entry['itemId'];
-
-            if (itemData is Map) {
-              return itemData['name']?.toString() ?? '';
-            }
-
-            return '';
-          })
+      final apiItems = category.items
+          .map((entry) => entry.itemId?.name?.trim() ?? '')
           .where((name) => name.isNotEmpty)
           .toList();
+
+      return apiItems;
     }
 
     return [];
-  }
-
-  List<String> get displayTransmissionItems {
-    final apiItems = apiTransmissionItems;
-
-    // Use API items when available; otherwise preserve the existing list.
-    return apiItems.isNotEmpty ? apiItems : widget.TransmissionItems;
   }
 
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<InspectionDetailsBloc, InspectionDetailsState>(
       builder: (context, state) {
-        final transmissionItems = displayTransmissionItems;
+        final apiItems = _getApiTransmissionItems(state);
+
+        final transmissionItems = apiItems.isNotEmpty
+            ? apiItems
+            : widget.TransmissionItems;
 
         if (state is InspectionDetailsLoading ||
             state is InspectionDetailsInitial) {

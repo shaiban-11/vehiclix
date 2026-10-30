@@ -23,15 +23,16 @@ class VehicleModel {
       data:
           (json['data'] as List<dynamic>?)
               ?.map(
-                (item) =>
-                    VehicleModelData.fromJson(item as Map<String, dynamic>),
+                (item) => VehicleModelData.fromJson(
+                  Map<String, dynamic>.from(item as Map),
+                ),
               )
               .toList() ??
           [],
       hasMore: json['has_more'] as bool?,
-      total: json['total'] as int?,
-      page: json['page'] as int?,
-      limit: json['limit'] as int?,
+      total: (json['total'] as num?)?.toInt(),
+      page: (json['page'] as num?)?.toInt(),
+      limit: (json['limit'] as num?)?.toInt(),
     );
   }
 
@@ -50,18 +51,28 @@ class VehicleModel {
 class VehicleModelData {
   String? id;
   String? name;
+  String? brandId;
 
-  VehicleModelData({this.id, this.name});
+  VehicleModelData({this.id, this.name, this.brandId});
 
   factory VehicleModelData.fromJson(Map<String, dynamic> json) {
     debugPrint('VEHICLE MODEL JSON: $json');
+
+    final brand = json['brand'];
+
+    final dynamic brandValue =
+        json['brand_id'] ??
+        json['brandId'] ??
+        (brand is Map ? (brand['_id'] ?? brand['id']) : brand);
+
     return VehicleModelData(
-      id: json['_id']?.toString(),
+      id: (json['_id'] ?? json['id'])?.toString(),
       name: (json['model_name'] ?? json['name'])?.toString(),
+      brandId: brandValue?.toString(),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'_id': id, 'name': name};
+    return {'_id': id, 'model_name': name, 'brand_id': brandId};
   }
 }

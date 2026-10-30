@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_event.dart';
@@ -22,8 +23,14 @@ class InspectionSubmitBloc
     try {
       final response = await repository.submitInspection(event.inspection);
 
-      // Handle an API response that explicitly indicates failure.
-      if (response is Map && response['success'] == false) {
+      debugPrint('SUBMIT INSPECTION RESPONSE: $response');
+
+      if (response is! Map) {
+        emit(InspectionSubmitFailure('Invalid API response.'));
+        return;
+      }
+
+      if (response['success'] != true) {
         emit(
           InspectionSubmitFailure(
             response['message']?.toString() ?? 'Inspection submission failed.',
@@ -32,7 +39,27 @@ class InspectionSubmitBloc
         return;
       }
 
-      emit(InspectionSubmitSuccess(response));
+      // Extract inspection ID from data._id
+      final data = response['data'];
+
+      final inspectionId = data is Map
+          ? (data['_id'] ?? data['id'] ?? '').toString()
+          : '';
+
+      debugPrint('SUBMIT SUCCESS INSPECTION ID: $inspectionId');
+
+      if (inspectionId.isEmpty) {
+        emit(
+          InspectionSubmitFailure(
+            'Inspection saved, but inspection ID was not returned.',
+          ),
+        );
+        return;
+      }
+
+      emit(
+        InspectionSubmitSuccess(response: response, inspectionId: inspectionId),
+      );
     } catch (e) {
       emit(InspectionSubmitFailure(e.toString()));
     }

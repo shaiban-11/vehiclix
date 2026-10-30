@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:rootysysproject/repositories/Api/api_client.dart';
 import 'package:rootysysproject/repositories/models/updatevehicleinfo_model.dart';
 
@@ -16,6 +17,7 @@ class UpdateVehicleInfoRepository {
       vehicleId: vehicleId,
       vehicleData: vehicleData,
     );
+    debugPrint('UPDATE API RESPONSE: $response');
 
     return UpdateVehicleInfoModel.fromJson(
       Map<String, dynamic>.from(response as Map),

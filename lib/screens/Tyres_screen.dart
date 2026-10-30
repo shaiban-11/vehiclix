@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:rootysysproject/bloc/completeinspection/bloc/completetinspection_bloc.dart';
+import 'package:rootysysproject/bloc/completeinspection/bloc/completetinspection_state.dart';
+import 'package:rootysysproject/bloc/completeinspection/bloc/completetinspection_event.dart';
+import 'package:rootysysproject/repositories/Api/api_client.dart';
 
 import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_bloc.dart';
 import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_event.dart';
@@ -10,6 +14,9 @@ import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_bloc
 import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_event.dart';
 import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_state.dart';
 
+// Completion API imports
+
+import 'package:rootysysproject/repositories/models/inspectioncategoryandfileds_model.dart';
 import 'package:rootysysproject/repositories/models/submitinspection_model.dart';
 
 import 'package:rootysysproject/screens/Chasis_screen.dart';
@@ -41,14 +48,22 @@ class TyresScreen extends StatefulWidget {
 }
 
 class _TyresScreenState extends State<TyresScreen> {
+  final ApiClient _apiClient = ApiClient();
+
+  bool _isLoadingSavedInspection = false;
+  bool _savedInspectionLoaded = false;
   bool showBackSuspensionContainers = false;
   String? selectedSuspension;
-  String selectedTyre = 'Front Left';
-  int selectedStep = 1;
+
+  String selectedTyre = '';
+
+  int selectedStep = 0;
+
   bool frontSuspensionPass = true;
   bool frontSuspensionFail = false;
   bool backSuspensionPass = false;
   bool backSuspensionFail = true;
+
   String engineUpperCoverStatus = 'Damaged';
   String inspectionComment = '';
   bool isSubmitting = false;
@@ -60,6 +75,7 @@ class _TyresScreenState extends State<TyresScreen> {
     'Gear Shifting',
     'Differential',
   ];
+
   final List<String> ChasisItems = [
     'Core Support',
     'Frame rail',
@@ -69,6 +85,7 @@ class _TyresScreenState extends State<TyresScreen> {
     'Radiator Side support(side baffle)',
     'Left fender apron',
   ];
+
   final List<String> interiorExteriorItems = [
     '2.Rear View Mirror',
     '3.Steering Wheel Upholstery',
@@ -87,6 +104,7 @@ class _TyresScreenState extends State<TyresScreen> {
     '16.Front Bumper',
     '17.Back Bumper',
   ];
+
   final List<String> ExteriorItems = [
     'Front Bumper',
     'Hood',
@@ -101,6 +119,7 @@ class _TyresScreenState extends State<TyresScreen> {
     'Mirrors',
     'Lights',
   ];
+
   final List<String> ElectricalItems = [
     'Infotainment',
     'Windows Operation',
@@ -125,7 +144,9 @@ class _TyresScreenState extends State<TyresScreen> {
     'Interior Lights',
     'Cruise Control',
   ];
+
   final Map<String, String> itemStatus = {};
+
   final List<String> tyreList = [
     'Front Left',
     'Front Right',
@@ -133,27 +154,92 @@ class _TyresScreenState extends State<TyresScreen> {
     'Rear Right',
     'Spare Tire',
   ];
-  final List<String> steps = [
-    'Vehicle Info',
-    'Tyres',
-    'Rims',
-    'Brake',
-    'Suspension',
-    'Interior & Exterior',
-    'Electrical',
-    'Exterior',
-    'Engine',
-    'Transmission',
-    'Chasis & Subframe',
-    'General Photos',
-    'Comments',
-  ];
+
+  String? _getCategoryId(String categoryName) {
+    for (final category in inspectionCategories) {
+      final name = category.categoryId?.name?.trim() ?? '';
+
+      if (name.toLowerCase() == categoryName.trim().toLowerCase()) {
+        return category.categoryId?.id;
+      }
+    }
+
+    return null;
+  }
+
+  String? _getItemId(String categoryName, String itemName) {
+    for (final category in inspectionCategories) {
+      final name = category.categoryId?.name?.trim() ?? '';
+
+      if (name.toLowerCase() != categoryName.trim().toLowerCase()) {
+        continue;
+      }
+
+      for (final item in category.items) {
+        final apiItemName = item.itemId?.name?.trim() ?? '';
+
+        if (apiItemName.toLowerCase() == itemName.trim().toLowerCase()) {
+          return item.itemId?.id;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // ------------------------------------------------------------
+  // API CATEGORIES
+  // ------------------------------------------------------------
+
+  List<InspectionCategory> get inspectionCategories {
+    final state = context.read<InspectionDetailsBloc>().state;
+
+    if (state is! InspectionDetailsLoaded) {
+      return <InspectionCategory>[];
+    }
+
+    final categories = List<InspectionCategory>.from(
+      state.model.data?.categories ?? <InspectionCategory>[],
+    );
+
+    categories.sort((a, b) => (a.order ?? 0).compareTo(b.order ?? 0));
+
+    return categories;
+  }
+
+  List<String> get apiCategoryNames {
+    return inspectionCategories
+        .map((category) => category.categoryId?.name?.trim() ?? '')
+        .where((name) => name.isNotEmpty)
+        .toList();
+  }
+
+  List<String> get steps => apiCategoryNames;
+
+  int get currentStepIndex {
+    if (steps.isEmpty) return 0;
+
+    return selectedStep.clamp(0, steps.length - 1);
+  }
+
+  String get currentCategory {
+    if (steps.isEmpty) return '';
+
+    return steps[currentStepIndex];
+  }
+
+  String get normalizedCategory => currentCategory.toLowerCase().trim();
 
   @override
   void initState() {
     super.initState();
+
+    debugPrint('Selected inspection type ID: ${widget.typeItemId}');
+    debugPrint('Inspection record ID: ${widget.inspectionId}');
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+
       context.read<InspectionDetailsBloc>().add(
         GetInspectionDataFieldsEvent(
           vehicleId: widget.vehicleId,
@@ -163,51 +249,149 @@ class _TyresScreenState extends State<TyresScreen> {
     });
   }
 
-  List<Map<String, dynamic>> get inspectionCategories {
-    final state = context.read<InspectionDetailsBloc>().state;
-    if (state is! InspectionDetailsLoaded) return [];
-    final categories = state.model.data?.categories ?? [];
-    return categories
-        .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList();
+  Future<void> _loadSavedInspection() async {
+    if (_savedInspectionLoaded ||
+        _isLoadingSavedInspection ||
+        widget.inspectionId.trim().isEmpty) {
+      return;
+    }
+
+    _isLoadingSavedInspection = true;
+
+    try {
+      final response = await _apiClient.getVehicleInspection(
+        widget.inspectionId,
+      );
+
+      if (!mounted) return;
+
+      if (response is! Map) {
+        debugPrint('Invalid inspection response: $response');
+        return;
+      }
+
+      final responseMap = Map<String, dynamic>.from(response);
+
+      if (responseMap['success'] != true) {
+        debugPrint(
+          'Unable to load saved inspection: '
+          '${responseMap['message'] ?? 'Unknown error'}',
+        );
+        return;
+      }
+
+      final rawData = responseMap['data'];
+
+      if (rawData is! Map) {
+        debugPrint('Saved inspection data is missing.');
+        return;
+      }
+
+      final inspectionData = Map<String, dynamic>.from(rawData);
+      final rawRemarks = inspectionData['remarks'];
+
+      if (rawRemarks is! List) {
+        debugPrint('No saved inspection remarks found.');
+        _savedInspectionLoaded = true;
+        return;
+      }
+
+      final Map<String, String> restoredStatuses = {};
+      String restoredComment = '';
+
+      for (final rawCategory in rawRemarks) {
+        if (rawCategory is! Map) continue;
+
+        final categoryData = Map<String, dynamic>.from(rawCategory);
+        final rawItems = categoryData['items'];
+
+        if (rawItems is! List) continue;
+
+        for (final rawItem in rawItems) {
+          if (rawItem is! Map) continue;
+
+          final item = Map<String, dynamic>.from(rawItem);
+          final itemId = item['itemId']?.toString() ?? '';
+
+          if (itemId.isEmpty) continue;
+
+          // API item ID ഉപയോഗിച്ച് UI-യിലെ item name കണ്ടെത്തുന്നു.
+          for (final category in inspectionCategories) {
+            for (final categoryItem in category.items) {
+              if (categoryItem.itemId?.id != itemId) continue;
+
+              final itemName = categoryItem.itemId?.name?.trim() ?? '';
+
+              if (itemName.isNotEmpty) {
+                final status = item['status']?.toString().trim() ?? '';
+
+                if (status.isNotEmpty) {
+                  restoredStatuses[itemName] = status;
+                }
+              }
+            }
+          }
+
+          final comment = item['comment']?.toString() ?? '';
+
+          if (comment.trim().isNotEmpty) {
+            restoredComment = comment;
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        itemStatus.addAll(restoredStatuses);
+
+        if (restoredComment.isNotEmpty) {
+          inspectionComment = restoredComment;
+        }
+
+        _savedInspectionLoaded = true;
+      });
+
+      debugPrint('Saved inspection data restored successfully.');
+      debugPrint('Restored item statuses: $restoredStatuses');
+    } catch (error, stackTrace) {
+      debugPrint('Error loading saved inspection: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      _isLoadingSavedInspection = false;
+    }
   }
 
   List<String> getCategoryItems(String categoryName) {
+    final wantedName = categoryName.trim().toLowerCase();
+
     for (final category in inspectionCategories) {
-      final categoryData = category['categoryId'];
-      if (categoryData is! Map) continue;
-      final name = categoryData['name']?.toString().toLowerCase().trim();
-      if (name != categoryName.toLowerCase().trim()) continue;
-      final items = category['items'];
-      if (items is! List) return [];
+      final apiName = category.categoryId?.name?.trim().toLowerCase() ?? '';
+
+      if (apiName != wantedName) continue;
+
+      final items = List<InspectionCategoryItem>.from(category.items);
+
+      items.sort((a, b) => (a.order ?? 0).compareTo(b.order ?? 0));
+
       return items
-          .whereType<Map>()
-          .map((entry) {
-            final item = entry['itemId'];
-            return item is Map ? item['name']?.toString() ?? '' : '';
-          })
+          .map((entry) => entry.itemId?.name?.trim() ?? '')
           .where((name) => name.isNotEmpty)
           .toList();
     }
-    return [];
+
+    return <String>[];
   }
 
-  String? _readId(dynamic value) {
-    if (value is Map) {
-      final id =
-          value['_id'] ??
-          value['id'] ??
-          value['category_id'] ??
-          value['item_id'];
-      return id?.toString();
-    }
-    return value?.toString();
-  }
+  // ------------------------------------------------------------
+  // SUBMIT INSPECTION API
+  // ------------------------------------------------------------
 
   Future<void> _submitInspection() async {
     if (isSubmitting) return;
+
     final categories = inspectionCategories;
+
     if (categories.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No inspection categories available.')),
@@ -216,30 +400,36 @@ class _TyresScreenState extends State<TyresScreen> {
     }
 
     final List<InspectionRemark> remarks = [];
+
     for (final category in categories) {
-      final categoryId = _readId(category['categoryId']);
-      if (categoryId == null || categoryId.isEmpty || categoryId == 'null') {
+      final categoryId = category.categoryId?.id;
+
+      if (categoryId == null || categoryId.isEmpty) {
         continue;
       }
-      final rawItems = category['items'];
-      if (rawItems is! List) continue;
+
       final List<InspectionItem> items = [];
 
-      for (final entry in rawItems) {
-        if (entry is! Map) continue;
-        final itemData = entry['itemId'];
-        final itemId = _readId(itemData);
-        if (itemId == null || itemId.isEmpty || itemId == 'null') continue;
-        final itemName = itemData is Map
-            ? itemData['name']?.toString() ?? ''
-            : '';
+      for (final entry in category.items) {
+        final itemData = entry.itemId;
+        final itemId = itemData?.id;
+
+        if (itemId == null || itemId.isEmpty) {
+          continue;
+        }
+
+        final itemName = itemData?.name?.trim() ?? '';
         final savedStatus = itemStatus[itemName] ?? 'NC';
-        final apiStatus = switch (savedStatus.toLowerCase()) {
+
+        final apiStatus = switch (savedStatus.trim().toLowerCase()) {
           'pass' => 'Pass',
           'fail' => 'Fail',
+          'n/a' => 'N/A',
+          'n/c' => 'N/C',
           'nc' => 'NC',
           _ => 'NC',
         };
+
         items.add(
           InspectionItem(
             itemId: itemId,
@@ -250,6 +440,7 @@ class _TyresScreenState extends State<TyresScreen> {
           ),
         );
       }
+
       if (items.isNotEmpty) {
         remarks.add(InspectionRemark(categoryId: categoryId, items: items));
       }
@@ -263,6 +454,9 @@ class _TyresScreenState extends State<TyresScreen> {
     }
 
     setState(() => isSubmitting = true);
+
+    debugPrint('Submitting inspection type ID: ${widget.typeItemId}');
+
     final model = InspectionSubmitModel(
       customerId: widget.customerId,
       vehicleId: widget.vehicleId,
@@ -270,10 +464,17 @@ class _TyresScreenState extends State<TyresScreen> {
       status: 'Draft',
       remarks: remarks,
     );
+
+    debugPrint('Submit request body: ${model.toJson()}');
+
     context.read<InspectionSubmitBloc>().add(
       SubmitInspectionEvent(inspection: model),
     );
   }
+
+  // ------------------------------------------------------------
+  // BUILD
+  // ------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -286,6 +487,7 @@ class _TyresScreenState extends State<TyresScreen> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
+
         if (state is InspectionDetailsError) {
           return Scaffold(
             backgroundColor: Colors.white,
@@ -305,13 +507,14 @@ class _TyresScreenState extends State<TyresScreen> {
                       Text(state.message, textAlign: TextAlign.center),
                       SizedBox(height: 16.h),
                       ElevatedButton(
-                        onPressed: () =>
-                            context.read<InspectionDetailsBloc>().add(
-                              GetInspectionDataFieldsEvent(
-                                vehicleId: widget.vehicleId,
-                                typeItemId: widget.typeItemId,
-                              ),
+                        onPressed: () {
+                          context.read<InspectionDetailsBloc>().add(
+                            GetInspectionDataFieldsEvent(
+                              vehicleId: widget.vehicleId,
+                              typeItemId: widget.typeItemId,
                             ),
+                          );
+                        },
                         child: const Text('Retry'),
                       ),
                       TextButton(
@@ -325,28 +528,113 @@ class _TyresScreenState extends State<TyresScreen> {
             ),
           );
         }
-        if (state is InspectionDetailsLoaded) {
-          return BlocListener<InspectionSubmitBloc, InspectionSubmitState>(
-            listener: (context, submitState) {
-              if (submitState is InspectionSubmitLoading) {
-                if (mounted) setState(() => isSubmitting = true);
-              } else if (submitState is InspectionSubmitSuccess) {
-                if (mounted) setState(() => isSubmitting = false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Inspection draft saved successfully.'),
-                  ),
-                );
-              } else if (submitState is InspectionSubmitFailure) {
-                if (mounted) setState(() => isSubmitting = false);
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(submitState.message)));
-              }
-            },
-            child: _buildInspectionScreen(),
+
+        if (!_savedInspectionLoaded && !_isLoadingSavedInspection) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _loadSavedInspection();
+            }
+          });
+        }
+        if (apiCategoryNames.isEmpty) {
+          return const Scaffold(
+            backgroundColor: Colors.white,
+            body: Center(child: Text('No inspection categories available.')),
           );
         }
+
+        // ----------------------------------------------------
+        // SUBMIT + COMPLETE API LISTENERS
+        // ----------------------------------------------------
+
+        return MultiBlocListener(
+          listeners: [
+            BlocListener<InspectionSubmitBloc, InspectionSubmitState>(
+              listener: (context, submitState) {
+                if (submitState is InspectionSubmitLoading) {
+                  if (mounted) {
+                    setState(() => isSubmitting = true);
+                  }
+                } else if (submitState is InspectionSubmitSuccess) {
+                  // Get inspection ID from the submit API response.
+                  final inspectionId = submitState.inspectionId.trim();
+
+                  debugPrint('INSPECTION ID FOR COMPLETION: $inspectionId');
+
+                  if (inspectionId.isEmpty) {
+                    setState(() => isSubmitting = false);
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Inspection ID not found in submit response.',
+                        ),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    return;
+                  }
+
+                  // Call completion API using the newly returned inspection ID.
+                  context.read<CompletedInspectionBloc>().add(
+                    CompletedInspectionRequested(inspectionId: inspectionId),
+                  );
+                } else if (submitState is InspectionSubmitFailure) {
+                  if (mounted) {
+                    setState(() => isSubmitting = false);
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(submitState.message),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+            ),
+            BlocListener<CompletedInspectionBloc, CompletedInspectionState>(
+              listener: (context, completeState) {
+                if (completeState is CompletedInspectionLoading) {
+                  if (mounted) {
+                    setState(() => isSubmitting = true);
+                  }
+                } else if (completeState is CompletedInspectionSuccess) {
+                  if (mounted) {
+                    setState(() => isSubmitting = false);
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Inspection completed successfully!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+
+                  // Return to previous screen after completion.
+                  // Return to Home screen after completion.
+                  Navigator.popUntil(context, (route) => route.isFirst);
+                } else if (completeState is CompletedInspectionFailure) {
+                  if (mounted) {
+                    setState(() => isSubmitting = false);
+                  }
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Inspection saved, but completion failed: '
+                        '${completeState.message}',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+            ),
+          ],
+          child: _buildInspectionScreen(),
+        );
+
         return const Scaffold(
           backgroundColor: Colors.white,
           body: Center(child: CircularProgressIndicator()),
@@ -355,30 +643,51 @@ class _TyresScreenState extends State<TyresScreen> {
     );
   }
 
-  Widget _buildInspectionScreen() {
-    final isSuspensionStep = selectedStep == 4;
-    final isInteriorExteriorStep = selectedStep == 5;
-    final isElectricalStep = selectedStep == 6;
-    final isExteriorStep = selectedStep == 7;
-    final isEngineStep = selectedStep == 8;
-    final isTransmissionStep = selectedStep == 9;
-    final isChasisStep = selectedStep == 10;
-    final isGeneralPhotosStep = selectedStep == 11;
-    final isCommentStep = selectedStep == 12;
+  // ------------------------------------------------------------
+  // INSPECTION SCREEN UI - DESIGN UNCHANGED
+  // ------------------------------------------------------------
 
-    final apiTyres = getCategoryItems('tyres');
-    final displayTyres = apiTyres.isNotEmpty ? apiTyres : tyreList;
+  Widget _buildInspectionScreen() {
+    final category = currentCategory;
+    final normalized = normalizedCategory;
+    final isInteriorStep = normalized == 'interior';
+
+    final isInteriorExteriorStep =
+        normalized == 'interior & exterior' ||
+        normalized == 'interior and exterior';
+
+    final isSuspensionStep = normalized.contains('suspension');
+
+    final isElectricalStep = normalized.contains('electrical');
+    final isExteriorStep = normalized == 'exterior';
+    final isEngineStep = normalized.contains('engine');
+    final isTransmissionStep = normalized.contains('transmission');
+
+    final isChasisStep =
+        normalized.contains('chassis') ||
+        normalized.contains('chasis') ||
+        normalized.contains('subframe');
+
+    final isGeneralPhotosStep = normalized.contains('general photos');
+    final isCommentStep = normalized.contains('comment');
+    final isTyreStep = normalized.contains('tyre');
+
+    final apiTyres = getCategoryItems(category);
+    final displayTyres = getCategoryItems(category);
+
     if (!displayTyres.contains(selectedTyre)) {
       selectedTyre = displayTyres.isNotEmpty
           ? displayTyres.first
           : 'Front Left';
     }
-    final apiInteriorItems = getCategoryItems('interior');
-    final apiExteriorItems = getCategoryItems('exterior');
-    final displayInteriorExteriorItems = [
-      ...apiInteriorItems,
-      ...apiExteriorItems,
-    ];
+
+    final apiInteriorItems = getCategoryItems(category);
+    final displayInteriorExteriorItems = apiInteriorItems;
+
+    final apiExteriorItems = getCategoryItems(category);
+    final apiElectricalItems = getCategoryItems(category);
+    final apiTransmissionItems = getCategoryItems(category);
+    final apiChasisItems = getCategoryItems(category);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -393,11 +702,12 @@ class _TyresScreenState extends State<TyresScreen> {
               child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(horizontal: 10.w),
                 child: Column(
+                  mainAxisSize: MainAxisSize.max,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(height: 27.h),
                     Text(
-                      steps[selectedStep],
+                      category,
                       style: TextStyle(
                         fontFamily: 'Manrope',
                         fontWeight: FontWeight.w700,
@@ -407,45 +717,65 @@ class _TyresScreenState extends State<TyresScreen> {
                       ),
                     ),
                     SizedBox(height: 20.h),
-                    if (isInteriorExteriorStep)
+
+                    if (isInteriorStep)
                       InteriorExterior(
                         engineUpperCoverStatus: engineUpperCoverStatus,
-                        onEngineUpperCoverStatusChanged: (status) =>
-                            setState(() => engineUpperCoverStatus = status),
-                        interiorExteriorItems:
-                            displayInteriorExteriorItems.isNotEmpty
-                            ? displayInteriorExteriorItems
-                            : interiorExteriorItems,
+                        onEngineUpperCoverStatusChanged: (status) {
+                          setState(() => engineUpperCoverStatus = status);
+                        },
+                        interiorExteriorItems: displayInteriorExteriorItems,
                         itemStatus: itemStatus,
-                        onItemTap: (item) =>
-                            setState(() => itemStatus[item] = 'Selected'),
+                        onItemTap: (item) {
+                          showTyrePopup(context, item, showremark: true);
+                        },
+                      )
+                    else if (isInteriorExteriorStep)
+                      InteriorExterior(
+                        engineUpperCoverStatus: engineUpperCoverStatus,
+                        onEngineUpperCoverStatusChanged: (status) {
+                          setState(() => engineUpperCoverStatus = status);
+                        },
+                        interiorExteriorItems: displayInteriorExteriorItems,
+                        itemStatus: itemStatus,
+                        onItemTap: (item) {
+                          setState(() {
+                            itemStatus[item] = 'Selected';
+                          });
+                        },
                       )
                     else if (isElectricalStep)
                       Electrical(
                         engineUpperCoverStatus: engineUpperCoverStatus,
-                        onEngineUpperCoverStatusChanged: (status) =>
-                            setState(() => engineUpperCoverStatus = status),
-                        ElectricalItems: ElectricalItems,
+                        onEngineUpperCoverStatusChanged: (status) {
+                          setState(() => engineUpperCoverStatus = status);
+                        },
+                        ElectricalItems: apiElectricalItems,
                         itemStatus: itemStatus,
-                        onItemTap: (item) =>
-                            setState(() => itemStatus[item] = 'Selected'),
+                        onItemTap: (item) {
+                          setState(() => itemStatus[item] = 'Selected');
+                        },
                       )
                     else if (isTransmissionStep)
                       TransmissionScreen(
                         engineUpperCoverStatus: engineUpperCoverStatus,
-                        onEngineUpperCoverStatusChanged: (status) =>
-                            setState(() => engineUpperCoverStatus = status),
-                        TransmissionItems: TransmissionItems,
+                        onEngineUpperCoverStatusChanged: (status) {
+                          setState(() => engineUpperCoverStatus = status);
+                        },
+                        TransmissionItems: apiTransmissionItems,
                         itemStatus: itemStatus,
-                        onItemTap: (item) =>
-                            setState(() => itemStatus[item] = 'Selected'),
+                        onItemTap: (item) {
+                          setState(() => itemStatus[item] = 'Selected');
+                        },
                       )
                     else if (isEngineStep)
                       EngineScreen()
                     else if (isCommentStep)
                       CommentScreen(
                         initialComment: inspectionComment,
-                        onCommentChanged: (value) => inspectionComment = value,
+                        onCommentChanged: (value) {
+                          inspectionComment = value;
+                        },
                       )
                     else if (isGeneralPhotosStep)
                       GeneralPhotos()
@@ -453,31 +783,62 @@ class _TyresScreenState extends State<TyresScreen> {
                       _buildSuspensionInspection()
                     else if (isExteriorStep)
                       ExteriorScreen(
+                        customerId: widget.customerId,
+                        vehicleId: widget.vehicleId,
+                        inspectionTypeId: widget.typeItemId,
+                        categoryId: _getCategoryId('Exterior') ?? '',
+                        itemId:
+                            _getItemId(
+                              'Exterior',
+                              apiExteriorItems.isNotEmpty
+                                  ? apiExteriorItems.first
+                                  : '',
+                            ) ??
+                            '',
+                        inspectionStatus: 'Draft',
+                        ExteriorItems: apiExteriorItems,
+                        itemStatus: itemStatus,
                         onItemTap: (String value) {},
-                        ExteriorItems: ExteriorItems,
+                        onResultChanged: (itemName, result) {
+                          if (!mounted) return;
+
+                          setState(() {
+                            itemStatus[itemName] = result;
+                          });
+                        },
                       )
                     else if (isChasisStep)
                       ChasisScreen(
                         onItemTap: (String value) {},
-                        ExteriorItems: ChasisItems,
+                        ExteriorItems: apiChasisItems,
                       )
                     else ...[
-                      Text(
-                        'Inspect points',
-                        style: TextStyle(
-                          fontFamily: 'Manrope',
-                          fontWeight: FontWeight.w500,
-                          fontSize: 14.sp,
-                          height: 1.0,
-                          color: const Color(0xFF000000).withOpacity(0.62),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Inspect points',
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontWeight: FontWeight.w500,
+                            fontSize: 14.sp,
+                            color: const Color(0xFF000000).withOpacity(0.62),
+                          ),
                         ),
                       ),
+
                       SizedBox(height: 12.h),
-                      Wrap(
-                        spacing: 10.w,
-                        runSpacing: 8.h,
-                        children: displayTyres.map(_buildTyreCard).toList(),
-                      ),
+
+                      if (displayTyres.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8.w),
+                          child: Wrap(
+                            spacing: 10.w,
+                            runSpacing: 8.h,
+                            children: displayTyres.map(_buildTyreCard).toList(),
+                          ),
+                        )
+                      else
+                        const Text('No inspection points available.'),
                     ],
                     SizedBox(height: 80.h),
                   ],
@@ -540,6 +901,7 @@ class _TyresScreenState extends State<TyresScreen> {
   Widget _buildSuspensionButtons({required bool isFront}) {
     final failSelected = isFront ? frontSuspensionFail : backSuspensionFail;
     final passSelected = isFront ? frontSuspensionPass : backSuspensionPass;
+
     return Row(
       children: [
         Expanded(
@@ -620,15 +982,34 @@ class _TyresScreenState extends State<TyresScreen> {
   }
 
   Widget _buildTyreCard(String tyreName) {
-    final isSelected = selectedTyre == tyreName;
+    final status = (itemStatus[tyreName] ?? '').trim().toLowerCase();
+
+    Color containerColor = const Color(0xFFF5F5F5);
+    Color textColor = Colors.black;
+    Color iconColor = Colors.grey;
+
+    if (status == 'pass') {
+      containerColor = const Color(0xFF73F700);
+      textColor = Colors.black;
+      iconColor = Colors.black;
+    } else if (status == 'fail') {
+      containerColor = const Color(0xFFFFDADA);
+      textColor = const Color(0xFFE90000);
+      iconColor = const Color(0xFFE90000);
+    }
+
     return GestureDetector(
-      onTap: () => setState(() => selectedTyre = tyreName),
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        selectedTyre = tyreName;
+        showTyrePopup(context, tyreName, showremark: true);
+      },
       child: Container(
         width: 178.w,
         height: 57.h,
         padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF5CC600) : const Color(0xFFF5F5F5),
+          color: containerColor,
           borderRadius: BorderRadius.circular(12.r),
         ),
         child: Row(
@@ -642,36 +1023,24 @@ class _TyresScreenState extends State<TyresScreen> {
                   fontFamily: 'Manrope',
                   fontWeight: FontWeight.w500,
                   fontSize: 12.sp,
-                  height: 1.0,
-                  color: isSelected ? Colors.white : const Color(0xFF222222),
+                  color: textColor,
                 ),
               ),
             ),
-            if (isSelected)
-              Container(
-                width: 18.w,
-                height: 18.h,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF5CC600),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5.w),
-                ),
-                alignment: Alignment.center,
-                child: Icon(Icons.check, size: 13.sp, color: Colors.white),
-              ),
-            SizedBox(width: 8.w),
-            Icon(
-              Icons.arrow_forward_ios,
-              size: 14.sp,
-              color: isSelected ? Colors.white : const Color(0xFF999999),
-            ),
+            Icon(Icons.arrow_forward_ios, size: 14.sp, color: iconColor),
           ],
         ),
       ),
     );
   }
 
+  // ------------------------------------------------------------
+  // BOTTOM BUTTONS
+  // ------------------------------------------------------------
+
   Widget _buildBottomButtons() {
+    final category = normalizedCategory;
+
     return Container(
       width: double.infinity,
       color: Colors.white,
@@ -714,37 +1083,13 @@ class _TyresScreenState extends State<TyresScreen> {
                 onPressed: isSubmitting
                     ? null
                     : () {
-                        if (selectedStep == steps.length - 1) {
-                          _submitInspection();
-                          return;
-                        }
-                        if (selectedStep == 4) {
-                          if (!showBackSuspensionContainers) {
-                            setState(() => showBackSuspensionContainers = true);
-                          } else {
-                            showTyrePopup(
-                              context,
-                              selectedTyre,
-                              showremark: true,
-                            );
-                          }
-                        } else if (selectedStep == 3) {
-                          showTyrePopup(
-                            context,
-                            selectedTyre,
-                            showBreakContainers: true,
-                          );
-                        } else if (selectedStep == 5) {
-                          showTyrePopup(
-                            context,
-                            selectedTyre,
-                            showremark: true,
-                          );
+                        if (currentStepIndex < steps.length - 1) {
                           setState(() {
-                            if (selectedStep < steps.length - 1) selectedStep++;
+                            selectedStep = currentStepIndex + 1;
+                            showBackSuspensionContainers = false;
                           });
                         } else {
-                          showTyrePopup(context, selectedTyre);
+                          _submitInspection();
                         }
                       },
                 style: ElevatedButton.styleFrom(
@@ -785,6 +1130,7 @@ class _TyresScreenState extends State<TyresScreen> {
 
   Widget _buildProgressIndicator() {
     final double stepWidth = 105.w;
+
     return SizedBox(
       height: 58.h,
       child: SingleChildScrollView(
@@ -794,11 +1140,13 @@ class _TyresScreenState extends State<TyresScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: List.generate(steps.length, (index) {
             final isLast = index == steps.length - 1;
-            final StepType stepType = index < selectedStep
+
+            final StepType stepType = index < currentStepIndex
                 ? StepType.completed
-                : index == selectedStep
+                : index == currentStepIndex
                 ? StepType.current
                 : StepType.inactive;
+
             return SizedBox(
               width: stepWidth,
               child: Stack(
@@ -836,7 +1184,7 @@ class _TyresScreenState extends State<TyresScreen> {
                       child: Container(
                         width: 69.w,
                         height: 1.h,
-                        color: index < selectedStep
+                        color: index < currentStepIndex
                             ? Colors.black
                             : const Color(0xFFD1D1D1),
                       ),
@@ -855,9 +1203,9 @@ class _TyresScreenState extends State<TyresScreen> {
                         fontSize: 12.sp,
                         fontWeight: FontWeight.w600,
                         height: 1.0,
-                        color: index < selectedStep
+                        color: index < currentStepIndex
                             ? Colors.black
-                            : index == selectedStep
+                            : index == currentStepIndex
                             ? const Color(0xFFA3A3A3)
                             : const Color(0xFFD1D1D1),
                       ),
@@ -888,28 +1236,50 @@ class _TyresScreenState extends State<TyresScreen> {
     bool showBreakContainers = false,
     bool showremark = false,
   }) {
+    final categoryId = _getCategoryId(currentCategory);
+    final itemId = _getItemId(currentCategory, tyreName);
+
+    if (categoryId == null || itemId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category ID or Item ID not found')),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.45),
-      isDismissible: true,
-      enableDrag: true,
-      builder: (context) => FrontLeftPopup(
+      builder: (popupContext) => FrontLeftPopup(
         tyreName: tyreName,
-        onSave: () {
-          setState(() {
-            if (selectedStep < steps.length - 1) selectedStep++;
-          });
-        },
+        customerId: widget.customerId,
+        vehicleId: widget.vehicleId,
+        inspectionTypeId: widget.typeItemId,
+        categoryId: categoryId,
+        itemId: itemId,
+        inspectionStatus: 'Draft',
         showBreakContainers: showBreakContainers,
         showremark: showremark,
+        onResultChanged: (result) {
+          if (!mounted) return;
+          setState(() {
+            itemStatus[tyreName] = result;
+          });
+        },
+        onSaveDetails: (details) {
+          if (!mounted) return;
+          setState(() {
+            itemStatus[tyreName] = (details['result'] as String?) ?? 'NC';
+          });
+        },
+        onSave: () {},
       ),
     );
   }
 
   Widget _Suspensioncontainers(String title) {
     final isSelected = selectedSuspension == title;
+
     return GestureDetector(
       onTap: () => setState(() => selectedSuspension = title),
       child: Container(

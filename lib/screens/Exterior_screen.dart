@@ -3,17 +3,32 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_bloc.dart';
 import 'package:rootysysproject/bloc/inspectioncategories/bloc/inspectioncategories_state.dart';
-
-import 'package:rootysysproject/screens/Front_Left_door_screen.dart';
+import 'package:rootysysproject/screens/front_left_popup.dart';
 
 class ExteriorScreen extends StatefulWidget {
+  final String customerId;
+  final String vehicleId;
+  final String inspectionTypeId;
+  final String categoryId;
+  final String itemId;
+  final String inspectionStatus;
   final List<String> ExteriorItems;
   final ValueChanged<String> onItemTap;
+  final Map<String, String> itemStatus;
+  final void Function(String itemName, String result) onResultChanged;
 
   const ExteriorScreen({
     super.key,
     required this.onItemTap,
     required this.ExteriorItems,
+    required this.itemStatus,
+    required this.onResultChanged,
+    required this.customerId,
+    required this.vehicleId,
+    required this.inspectionTypeId,
+    required this.categoryId,
+    required this.itemId,
+    required this.inspectionStatus,
   });
 
   @override
@@ -21,64 +36,33 @@ class ExteriorScreen extends StatefulWidget {
 }
 
 class _ExteriorScreenState extends State<ExteriorScreen> {
-  String selectedExterior = 'Front Left Door';
+  String selectedExterior = '';
 
   // Read Exterior inspection items from the existing API state.
+
   List<String> _getExteriorItems(InspectionDetailsState state) {
     if (state is! InspectionDetailsLoaded) {
       return widget.ExteriorItems;
     }
 
-    final categories = state.model.data?.categories;
-
-    if (categories == null || categories.isEmpty) {
-      return widget.ExteriorItems;
-    }
+    final categories = state.model.data?.categories ?? [];
 
     for (final category in categories) {
-      if (category is! Map) continue;
+      final categoryName =
+          category.categoryId?.name?.toLowerCase().trim() ?? '';
 
-      final categoryId = category['categoryId'];
-
-      String categoryName = '';
-
-      if (categoryId is Map) {
-        categoryName = (categoryId['name'] ?? '').toString();
-      } else if (categoryId is String) {
-        categoryName = categoryId;
-      }
-
-      if (categoryName.trim().toLowerCase() != 'exterior') {
+      if (categoryName != 'exterior') {
         continue;
       }
 
-      final items = category['items'];
+      final apiItems = category.items
+          .map((entry) => entry.itemId?.name?.trim() ?? '')
+          .where((name) => name.isNotEmpty)
+          .toList();
 
-      if (items is! List) {
-        return widget.ExteriorItems;
+      if (apiItems.isNotEmpty) {
+        return apiItems;
       }
-
-      final List<String> apiItems = [];
-
-      for (final item in items) {
-        if (item is! Map) continue;
-
-        final itemId = item['itemId'];
-
-        String itemName = '';
-
-        if (itemId is Map) {
-          itemName = (itemId['name'] ?? '').toString();
-        } else if (itemId is String) {
-          itemName = itemId;
-        }
-
-        if (itemName.trim().isNotEmpty) {
-          apiItems.add(itemName.trim());
-        }
-      }
-
-      return apiItems.isNotEmpty ? apiItems : widget.ExteriorItems;
     }
 
     return widget.ExteriorItems;
@@ -132,7 +116,23 @@ class _ExteriorScreenState extends State<ExteriorScreen> {
   }
 
   Widget _buildExteriorItem(BuildContext context, String title) {
+    final String status = widget.itemStatus[title] ?? '';
+
     final bool isSelected = selectedExterior == title;
+
+    Color containerColor = const Color(0xFFF5F5F5);
+    Color textColor = const Color(0xFF111111);
+    Color iconColor = const Color(0xFFA3A3A3);
+
+    if (status == 'Pass') {
+      containerColor = const Color(0xFF73F700);
+      textColor = const Color(0xFF449400);
+      iconColor = const Color(0xFF449400);
+    } else if (status == 'Fail') {
+      containerColor = const Color(0xFFFFDADA);
+      textColor = const Color(0xFFE90000);
+      iconColor = const Color(0xFFE90000);
+    }
 
     return GestureDetector(
       onTap: () {
@@ -140,27 +140,31 @@ class _ExteriorScreenState extends State<ExteriorScreen> {
           selectedExterior = title;
         });
 
-        // Send the selected item back to the parent.
         widget.onItemTap(title);
 
-        // Open the existing bottom sheet.
-        showexteriorbottomsheet(context, title);
+        showexteriorbottomsheet(
+          context,
+          title,
+          customerId: widget.customerId,
+          vehicleId: widget.vehicleId,
+          inspectionTypeId: widget.inspectionTypeId,
+          categoryId: widget.categoryId,
+          itemId: widget.itemId,
+          inspectionStatus: widget.inspectionStatus,
+          onResultChanged: (result) {
+            widget.onResultChanged(title, result);
+          },
+        );
       },
+
+      // IMPORTANT: Container must be the child of GestureDetector.
       child: Container(
         width: 178.w,
         height: 57.h,
-        padding: EdgeInsets.only(
-          top: 10.h,
-          right: 12.w,
-          bottom: 10.h,
-          left: 12.w,
-        ),
+        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 10.h),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F5F5),
+          color: containerColor,
           borderRadius: BorderRadius.circular(12.r),
-          border: isSelected
-              ? Border.all(color: const Color(0xFFE90000), width: 1.5)
-              : null,
         ),
         child: Row(
           children: [
@@ -173,48 +177,61 @@ class _ExteriorScreenState extends State<ExteriorScreen> {
                   fontFamily: 'Manrope',
                   fontSize: 14.sp,
                   fontWeight: FontWeight.w600,
-                  height: 1.0,
-                  color: isSelected
-                      ? const Color(0xFFE90000)
-                      : const Color(0xFF111111),
+                  color: textColor,
                 ),
               ),
             ),
-
             Icon(
               Icons.keyboard_arrow_right_rounded,
               size: 22.sp,
-              color: isSelected
-                  ? const Color(0xFFE90000)
-                  : const Color(0xFFA3A3A3),
+              color: iconColor,
             ),
           ],
         ),
       ),
     );
   }
-}
 
-// EXTERIOR BOTTOM SHEET
-
-void showexteriorbottomsheet(BuildContext context, String selectedExterior) {
-  showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (context) {
-      return Container(
-        width: 402.w,
-        height: 677.h,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(28.r),
-            topRight: Radius.circular(28.r),
+  void showexteriorbottomsheet(
+    BuildContext context,
+    String selectedExterior, {
+    required String customerId,
+    required String vehicleId,
+    required String inspectionTypeId,
+    required String categoryId,
+    required String itemId,
+    required String inspectionStatus,
+    required ValueChanged<String> onResultChanged,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          width: 402.w,
+          height: 677.h,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(28.r),
+              topRight: Radius.circular(28.r),
+            ),
           ),
-        ),
-        child: FrontLeftDoor(exteriorName: selectedExterior, showChasis: false),
-      );
-    },
-  );
+          child: FrontLeftPopup(
+            tyreName: selectedExterior,
+            customerId: customerId,
+            vehicleId: vehicleId,
+            inspectionTypeId: inspectionTypeId,
+            categoryId: categoryId,
+            itemId: itemId,
+            inspectionStatus: inspectionStatus,
+            showBreakContainers: false,
+            showremark: true,
+            onResultChanged: onResultChanged,
+          ),
+        );
+      },
+    );
+  }
 }

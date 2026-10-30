@@ -72,6 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
       },
       builder: (context, state) {
         final isLoading = state.status == LoginStatus.loading;
+        final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
 
         return Scaffold(
           resizeToAvoidBottomInset: true,
@@ -82,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     SizedBox(
                       width: double.infinity,
-                      height: 554.h,
+                      height: keyboardVisible ? 180.h : 554.h,
                       child: Image.asset(
                         'assets/images/car23.png',
                         fit: BoxFit.cover,
@@ -103,6 +104,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 Expanded(
                   child: SingleChildScrollView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    physics: const ClampingScrollPhysics(),
                     child: Padding(
                       padding: EdgeInsets.symmetric(horizontal: 11.w),
                       child: Form(
@@ -123,6 +127,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             SizedBox(height: 18.h),
                             _InputField(
                               controller: usernameController,
+                              keyboardType: TextInputType.text,
+
                               hintText: 'User name',
                               obscureText: false,
                               textInputAction: TextInputAction.next,
@@ -137,6 +143,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             _InputField(
                               controller: passwordController,
                               hintText: 'Password',
+                              keyboardType: TextInputType.visiblePassword,
+
                               obscureText: obscurePassword,
                               textInputAction: TextInputAction.done,
                               onSubmitted: (_) {
@@ -218,6 +226,7 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 class _InputField extends StatelessWidget {
+  final TextInputType keyboardType;
   final TextEditingController controller;
   final String hintText;
   final bool obscureText;
@@ -227,6 +236,7 @@ class _InputField extends StatelessWidget {
   final ValueChanged<String>? onSubmitted;
 
   const _InputField({
+    this.keyboardType = TextInputType.text,
     required this.controller,
     required this.hintText,
     required this.obscureText,
@@ -246,9 +256,17 @@ class _InputField extends StatelessWidget {
         textInputAction: textInputAction,
         validator: validator,
         onFieldSubmitted: onSubmitted,
+
+        autocorrect: false,
+        enableSuggestions: false,
+        spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+
+        keyboardType: keyboardType,
+
         style: TextStyle(fontSize: 13.sp, color: const Color(0xff222222)),
         decoration: InputDecoration(
           hintText: hintText,
+          border: InputBorder.none,
           hintStyle: TextStyle(
             fontSize: 16.sp,
             color: const Color(0xFF000000),

@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:rootysysproject/bloc/Brands/bloc/brands_bloc.dart';
 import 'package:rootysysproject/bloc/Fuel/bloc/fueltype_bloc.dart';
 import 'package:rootysysproject/bloc/Transmission/bloc/transmission_bloc.dart';
+import 'package:rootysysproject/bloc/completeinspection/bloc/completetinspection_bloc.dart';
 import 'package:rootysysproject/bloc/country_spec.dart/bloc/countryspec_bloc.dart';
 import 'package:rootysysproject/bloc/createcustomervehicle/bloc/createcustomervehicle_bloc.dart';
 import 'package:rootysysproject/bloc/customer/bloc/customer_bloc.dart';
@@ -21,6 +22,7 @@ import 'package:rootysysproject/bloc/login/bloc/login_bloc.dart';
 import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_bloc.dart';
 import 'package:rootysysproject/bloc/updatecustomer/bloc/updatecustomer_bloc.dart';
 import 'package:rootysysproject/bloc/updatevehicleinfo/bloc/updatevehicleinfo_bloc.dart';
+import 'package:rootysysproject/bloc/uploadfiles/bloc/uploadfiles_bloc.dart';
 import 'package:rootysysproject/bloc/user/bloc/user_bloc.dart';
 import 'package:rootysysproject/bloc/vehicle_model/bloc/vehicle_model_bloc.dart';
 import 'package:rootysysproject/bloc/vehicle_varients/bloc/vehicle_varients_bloc.dart';
@@ -29,6 +31,7 @@ import 'package:rootysysproject/repositories/Api/Transmission_api.dart';
 import 'package:rootysysproject/repositories/Api/api_client.dart';
 import 'package:rootysysproject/repositories/Api/brand_api.dart';
 import 'package:rootysysproject/repositories/Api/ceratecustomervehicle_api.dart';
+import 'package:rootysysproject/repositories/Api/complete_inspection_api.dart';
 import 'package:rootysysproject/repositories/Api/counteryspec_api.dart';
 import 'package:rootysysproject/repositories/Api/customerprofile_api.dart';
 import 'package:rootysysproject/repositories/Api/customervehicledelete_api.dart';
@@ -45,10 +48,12 @@ import 'package:rootysysproject/repositories/Api/User_api.dart';
 import 'package:rootysysproject/repositories/Api/submitinspection_api.dart';
 import 'package:rootysysproject/repositories/Api/updatecustomer_api.dart';
 import 'package:rootysysproject/repositories/Api/updatevehicleinfo_api.dart';
+import 'package:rootysysproject/repositories/Api/upload_api.dart';
 import 'package:rootysysproject/repositories/Api/vehiclemodel_api.dart';
 import 'package:rootysysproject/repositories/Api/vehiclevarients_api.dart';
 
 import 'package:rootysysproject/screens/Login_screen.dart';
+import 'package:rootysysproject/screens/reportsdetails_screen.dart';
 
 void main() {
   runApp(const VehiclixApp());
@@ -130,6 +135,16 @@ class VehiclixApp extends StatelessWidget {
               ),
             ),
             BlocProvider(
+              create: (context) => FileUploadBloc(
+                repository: FileUploadRepository(apiClient: apiClient),
+              ),
+            ),
+            BlocProvider(
+              create: (context) => CompletedInspectionBloc(
+                repository: CompletedInspectionRepository(apiClient: apiClient),
+              ),
+            ),
+            BlocProvider(
               create: (context) => DraftInspectionBloc(
                 repository: DraftInspectionRepository(apiClient: ApiClient()),
               )..add(FetchDraftInspections(page: 1, limit: 10)),
@@ -199,7 +214,7 @@ class VehiclixApp extends StatelessWidget {
               useMaterial3: true,
               scaffoldBackgroundColor: Colors.white,
             ),
-            home: const LoginScreen(),
+            home: LoginScreen(),
           ),
         );
       },

@@ -1,22 +1,53 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:rootysysproject/bloc/uploadfiles/bloc/uploadfiles_bloc.dart';
+import 'package:rootysysproject/bloc/uploadfiles/bloc/uploadfiles_event.dart';
+import 'package:rootysysproject/bloc/uploadfiles/bloc/uploadfiles_state.dart';
+
+import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_bloc.dart';
+import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_event.dart';
+import 'package:rootysysproject/bloc/submitinspection/bloc/submitinspection_state.dart';
+
+import 'package:rootysysproject/repositories/models/submitinspection_model.dart';
+
 class FrontLeftPopup extends StatefulWidget {
+  final String tyreName;
+
+  // Real IDs must come from your parent inspection screen.
+  final String customerId;
+  final String vehicleId;
+  final String inspectionTypeId;
+  final String categoryId;
+  final String itemId;
+
+  // This is the overall inspection status accepted by your API.
+  final String inspectionStatus;
+
   final bool showBreakContainers;
   final bool showremark;
-  final String tyreName;
-  final VoidCallback? onSave;
 
-  // Optional callback to send collected values to the parent.
+  final VoidCallback? onSave;
+  final ValueChanged<String>? onResultChanged;
   final ValueChanged<Map<String, dynamic>>? onSaveDetails;
 
   const FrontLeftPopup({
     super.key,
     required this.tyreName,
-    this.onSave,
+    required this.customerId,
+    required this.vehicleId,
+    required this.inspectionTypeId,
+    required this.categoryId,
+    required this.itemId,
+    required this.inspectionStatus,
     required this.showBreakContainers,
     required this.showremark,
+    this.onSave,
+    this.onResultChanged,
     this.onSaveDetails,
   });
 
@@ -25,21 +56,28 @@ class FrontLeftPopup extends StatefulWidget {
 }
 
 class _FrontLeftPopupState extends State<FrontLeftPopup> {
-  String selectedResult = 'Fail';
+  String selectedResult = '';
 
   final Set<String> selectedDefects = {};
 
   final TextEditingController _remarkController = TextEditingController();
+
   final TextEditingController _breakTypeController = TextEditingController();
+
   final TextEditingController _breakPadsController = TextEditingController();
 
   final ImagePicker _imagePicker = ImagePicker();
+
   final List<XFile> _selectedPhotos = [];
+
+  bool _isSaving = false;
 
   void _selectResult(String value) {
     setState(() {
       selectedResult = value;
     });
+
+    widget.onResultChanged?.call(value);
   }
 
   void _toggleDefect(String value) {
@@ -54,14 +92,13 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
 
   Future<void> _pickPhoto() async {
     try {
-      final XFile? photo = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
+      final List<XFile> photos = await _imagePicker.pickMultiImage(
         imageQuality: 85,
       );
 
-      if (photo != null && mounted) {
+      if (photos.isNotEmpty && mounted) {
         setState(() {
-          _selectedPhotos.add(photo);
+          _selectedPhotos.addAll(photos);
         });
       }
     } catch (e) {
@@ -69,29 +106,180 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Unable to select photo: $e')));
+      ).showSnackBar(SnackBar(content: Text('Photo selection failed: $e')));
     }
   }
 
-  void _save() {
-    final Map<String, dynamic> details = {
-      'inspectionItem': widget.tyreName,
-      'result': selectedResult,
-      'defects': selectedDefects.toList(),
-      'remark': _remarkController.text.trim(),
-      'breakType': _breakTypeController.text.trim(),
-      'breakPads': _breakPadsController.text.trim(),
-      'photos': _selectedPhotos.map((photo) => photo.path).toList(),
-    };
+  void _removePhoto(int index) {
+    setState(() {
+      _selectedPhotos.removeAt(index);
+    });
+  }
 
-    // Return the collected inspection details to the parent.
-    widget.onSaveDetails?.call(details);
+  // Upload one photo and get its server URL.
+  Future<String> _uploadOnePhoto(XFile photo) async {
+    final uploadBloc = context.read<FileUploadBloc>();
 
-    // Close the popup.
-    Navigator.pop(context);
+    uploadBloc.add(
+      FileUploadRequested(folder: 'customer-vehicle', file: File(photo.path)),
+    );
 
-    // Preserve the existing callback.
-    widget.onSave?.call();
+    final uploadState = await uploadBloc.stream.firstWhere(
+      (state) => state is FileUploadSuccess || state is FileUploadFailure,
+    );
+
+    if (uploadState is FileUploadFailure) {
+      throw Exception(uploadState.message);
+    }
+
+    if (uploadState is FileUploadSuccess) {
+      final url = uploadState.response.data?.url;
+
+      if (url != null && url.isNotEmpty) {
+        return url;
+      }
+
+      throw Exception('Upload response-ൽ not in image url.');
+    }
+
+    throw Exception('Photo upload failed.');
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) return;
+
+    // Comment mandatory
+    if (_remarkController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('please comment')));
+      return;
+    }
+
+    // Photo mandatory
+    if (_selectedPhotos.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('please attach one photo')));
+      return;
+    }
+
+    // നിങ്ങളുടെ existing code ഇവിടെ തുടരണം
+
+    // IDs must come from the real inspection data.
+    if (widget.customerId.isEmpty ||
+        widget.vehicleId.isEmpty ||
+        widget.inspectionTypeId.isEmpty ||
+        widget.categoryId.isEmpty ||
+        widget.itemId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Inspection ID-കൾ ലഭ്യമല്ല.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      // STEP 1: Upload all selected photos.
+      final List<String> uploadedUrls = [];
+
+      for (final photo in _selectedPhotos) {
+        final url = await _uploadOnePhoto(photo);
+        uploadedUrls.add(url);
+      }
+
+      if (!mounted) return;
+
+      // STEP 2: Prepare the selected UI values.
+      final details = <String, dynamic>{
+        'inspectionItem': widget.tyreName,
+        'result': selectedResult,
+        'defects': selectedDefects.toList(),
+        'remark': _remarkController.text.trim(),
+        'breakType': _breakTypeController.text.trim(),
+        'breakPads': _breakPadsController.text.trim(),
+        'photos': uploadedUrls,
+      };
+
+      // STEP 3: Convert the UI values to your existing API model.
+      final inspection = InspectionSubmitModel(
+        customerId: widget.customerId,
+        vehicleId: widget.vehicleId,
+        inspectionTypeId: widget.inspectionTypeId,
+        status: widget.inspectionStatus,
+        remarks: [
+          InspectionRemark(
+            categoryId: widget.categoryId,
+            items: [
+              InspectionItem(
+                itemId: widget.itemId,
+                status: selectedResult,
+                defects: selectedDefects.toList(),
+                comment: _remarkController.text.trim(),
+                images: uploadedUrls
+                    .map((url) => InspectionImage(url: url))
+                    .toList(),
+              ),
+            ],
+          ),
+        ],
+      );
+
+      // STEP 4: Submit through your existing BLoC.
+      final submitBloc = context.read<InspectionSubmitBloc>();
+
+      submitBloc.add(SubmitInspectionEvent(inspection: inspection));
+
+      // Wait for the API submission result.
+      final submitState = await submitBloc.stream.firstWhere(
+        (state) =>
+            state is InspectionSubmitSuccess ||
+            state is InspectionSubmitFailure,
+      );
+
+      if (!mounted) return;
+
+      if (submitState is InspectionSubmitFailure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Inspection submit പരാജയപ്പെട്ടു: '
+              '${submitState.message}',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // STEP 5: Return the saved UI values to the parent.
+      widget.onSaveDetails?.call(details);
+      widget.onSave?.call();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Inspection  submitted successfully'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pop(context, details);
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('not saved : $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
   }
 
   @override
@@ -108,7 +296,7 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
       width: 402.w,
       height: 508.h,
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFFFF),
+        color: Colors.white,
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(28.r),
           topRight: Radius.circular(28.r),
@@ -116,50 +304,54 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
       ),
       child: Column(
         children: [
+          // HEADER
           SizedBox(
-            height: 80.h,
+            height: 65.h,
             child: Padding(
-              padding: EdgeInsets.only(left: 12.w, right: 9.w, top: 16.h),
+              padding: EdgeInsets.symmetric(horizontal: 12.w),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 14.h),
-                      child: Text(
-                        widget.tyreName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: 'Manrope',
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w600,
-                          height: 1.0,
-                          color: const Color(0xFF000000),
-                        ),
+                    child: Text(
+                      widget.tyreName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black,
                       ),
                     ),
                   ),
                   GestureDetector(
-                    onTap: _save,
+                    onTap: _isSaving ? null : _save,
                     child: Container(
                       width: 68.w,
-                      height: 48.h,
+                      height: 42.h,
                       decoration: BoxDecoration(
                         color: const Color(0xFF73F700),
-                        borderRadius: BorderRadius.circular(42.46.r),
+                        borderRadius: BorderRadius.circular(42.r),
                       ),
                       alignment: Alignment.center,
-                      child: Text(
-                        'Save',
-                        style: TextStyle(
-                          fontFamily: 'Manrope',
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w500,
-                          height: 1.0,
-                          color: const Color(0xFF449400),
-                        ),
-                      ),
+                      child: _isSaving
+                          ? SizedBox(
+                              width: 20.w,
+                              height: 20.w,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF449400),
+                              ),
+                            )
+                          : Text(
+                              'Save',
+                              style: TextStyle(
+                                fontFamily: 'Manrope',
+                                fontSize: 14.sp,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF449400),
+                              ),
+                            ),
                     ),
                   ),
                 ],
@@ -167,247 +359,239 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
             ),
           ),
 
-          Container(width: 370.w, height: 1.h, color: const Color(0xFFE8E8E8)),
+          Container(height: 1.h, color: const Color(0xFFE8E8E8)),
 
+          // FORM
           Expanded(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 12.w,
-                  right: 9.w,
-                  top: 15.h,
-                  bottom: 20.h,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(height: 5.h),
+              padding: EdgeInsets.fromLTRB(12.w, 15.h, 12.w, 20.h),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Test result',
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 14.sp,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF777777),
+                    ),
+                  ),
 
-                    // TEST RESULT
+                  SizedBox(height: 10.h),
+
+                  // PASS AND FAIL
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _resultButton(
+                          text: 'Fail',
+                          selected: selectedResult == 'Fail',
+                          color: const Color(0xFFE90000),
+                          icon: Icons.cancel_outlined,
+                          onTap: () => _selectResult('Fail'),
+                        ),
+                      ),
+                      SizedBox(width: 8.w),
+                      Expanded(
+                        child: _resultButton(
+                          text: 'Pass',
+                          selected: selectedResult == 'Pass',
+                          color: const Color(0xFF449400),
+                          icon: Icons.check_circle_outline,
+                          onTap: () => _selectResult('Pass'),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  SizedBox(height: 8.h),
+
+                  // N/A AND N/C
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _resultButton(
+                          text: 'N/A',
+                          selected: selectedResult == 'N/A',
+                          color: const Color(0xFF3E3E3E),
+                          onTap: () => _selectResult('N/A'),
+                        ),
+                      ),
+                      SizedBox(width: 8.w),
+                      Expanded(
+                        child: _resultButton(
+                          text: 'N/C',
+                          selected: selectedResult == 'N/C',
+                          color: const Color(0xFF3E3E3E),
+                          onTap: () => _selectResult('N/C'),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  SizedBox(height: 22.h),
+
+                  // REMARK
+                  if (widget.showremark) ...[
                     Text(
-                      'Test result',
+                      'Remark',
                       style: TextStyle(
                         fontFamily: 'Manrope',
                         fontSize: 14.sp,
                         fontWeight: FontWeight.w500,
-                        height: 1.0,
-                        color: const Color(0x9E000000),
+                        color: const Color(0xFF222222),
+                      ),
+                    ),
+                    SizedBox(height: 9.h),
+                    TextField(
+                      controller: _remarkController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        hintText: 'Comment',
+                        filled: true,
+                        fillColor: const Color(0xFFF5F5F5),
+                        contentPadding: EdgeInsets.all(12.w),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12.r),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 20.h),
+                  ],
+
+                  // DEFECTS
+                  if (!widget.showBreakContainers && !widget.showremark) ...[
+                    Row(
+                      children: [
+                        Expanded(child: _defectButton('Scratches')),
+                        SizedBox(width: 10.w),
+                        Expanded(child: _defectButton('Bent')),
+                      ],
+                    ),
+                    SizedBox(height: 10.h),
+                    Row(
+                      children: [
+                        Expanded(child: _defectButton('Cracks')),
+                        SizedBox(width: 10.w),
+                        Expanded(child: _defectButton('Corrosion')),
+                      ],
+                    ),
+                    SizedBox(height: 20.h),
+                  ],
+
+                  // BRAKE FIELDS
+                  if (widget.showBreakContainers) ...[
+                    _labeledField(
+                      title: 'Break Type',
+                      hint: 'Select break type',
+                      controller: _breakTypeController,
+                    ),
+                    SizedBox(height: 12.h),
+                    _labeledField(
+                      title: 'Break pads',
+                      hint: 'Select break pads',
+                      controller: _breakPadsController,
+                    ),
+                    SizedBox(height: 20.h),
+                  ],
+
+                  // ATTACH PHOTO
+                  if (!widget.showBreakContainers) ...[
+                    Text(
+                      'Attach photo',
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF777777),
                       ),
                     ),
 
                     SizedBox(height: 10.h),
 
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ResultButton(
-                            text: 'Fail',
-                            type: ResultType.fail,
-                            selected: selectedResult == 'Fail',
-                            onTap: () => _selectResult('Fail'),
-                          ),
+                    GestureDetector(
+                      onTap: _isSaving ? null : _pickPhoto,
+                      child: Container(
+                        height: 40.h,
+                        padding: EdgeInsets.symmetric(horizontal: 12.w),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: const Color(0xFFD1D1D1)),
+                          borderRadius: BorderRadius.circular(30.r),
                         ),
-                        SizedBox(width: 8.w),
-                        Expanded(
-                          child: _ResultButton(
-                            text: 'Pass',
-                            type: ResultType.pass,
-                            selected: selectedResult == 'Pass',
-                            onTap: () => _selectResult('Pass'),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    SizedBox(height: 8.h),
-
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ResultButton(
-                            text: 'N/A',
-                            type: ResultType.normal,
-                            selected: selectedResult == 'N/A',
-                            onTap: () => _selectResult('N/A'),
-                          ),
-                        ),
-                        SizedBox(width: 8.w),
-                        Expanded(
-                          child: _ResultButton(
-                            text: 'N/C',
-                            type: ResultType.normal,
-                            selected: selectedResult == 'N/C',
-                            onTap: () => _selectResult('N/C'),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    SizedBox(height: 26.h),
-
-                    // REMARK
-                    if (widget.showremark) ...[
-                      Text(
-                        'Remark',
-                        style: TextStyle(
-                          color: const Color(0xFF222222),
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w500,
-                          fontFamily: 'Manrope',
-                        ),
-                      ),
-
-                      SizedBox(height: 9.h),
-
-                      _buildTextField(
-                        controller: _remarkController,
-                        hint: 'Comment',
-                      ),
-                    ],
-
-                    SizedBox(height: 25.h),
-
-                    // DEFECT OPTIONS
-                    if (!widget.showBreakContainers && !widget.showremark) ...[
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _DefectButton(
-                              text: 'Scratches',
-                              selected: selectedDefects.contains('Scratches'),
-                              onTap: () => _toggleDefect('Scratches'),
-                            ),
-                          ),
-                          SizedBox(width: 10.w),
-                          Expanded(
-                            child: _DefectButton(
-                              text: 'Bent',
-                              selected: selectedDefects.contains('Bent'),
-                              onTap: () => _toggleDefect('Bent'),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      SizedBox(height: 10.h),
-
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _DefectButton(
-                              text: 'Cracks',
-                              selected: selectedDefects.contains('Cracks'),
-                              onTap: () => _toggleDefect('Cracks'),
-                            ),
-                          ),
-                          SizedBox(width: 10.w),
-                          Expanded(
-                            child: _DefectButton(
-                              text: 'Corrosion',
-                              selected: selectedDefects.contains('Corrosion'),
-                              onTap: () => _toggleDefect('Corrosion'),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      SizedBox(height: 30.h),
-                    ],
-
-                    // BRAKE FIELDS
-                    if (widget.showBreakContainers) ...[
-                      _buildLabeledField(
-                        title: 'Break Type',
-                        hint: 'Select break type',
-                        controller: _breakTypeController,
-                        showArrow: true,
-                      ),
-
-                      SizedBox(height: 12.h),
-
-                      _buildLabeledField(
-                        title: 'Break pads',
-                        hint: 'Select break pads',
-                        controller: _breakPadsController,
-                        showArrow: false,
-                      ),
-
-                      SizedBox(height: 20.h),
-                    ],
-
-                    // ATTACH PHOTO
-                    if (!widget.showBreakContainers) ...[
-                      Text(
-                        'Attach photo',
-                        style: TextStyle(
-                          fontFamily: 'Manrope',
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w500,
-                          height: 1.0,
-                          color: const Color(0x9E000000),
-                        ),
-                      ),
-
-                      SizedBox(height: 10.h),
-
-                      GestureDetector(
-                        onTap: _pickPhoto,
-                        child: Container(
-                          width: 150.w,
-                          height: 39.h,
-                          padding: EdgeInsets.symmetric(horizontal: 10.w),
-                          decoration: BoxDecoration(
-                            color: Colors.transparent,
-                            border: Border.all(
-                              color: const Color(0xFFD1D1D1),
-                              width: 1.w,
-                            ),
-                            borderRadius: BorderRadius.circular(30.r),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.camera_alt_outlined,
-                                size: 18.sp,
-                                color: const Color(0xFF222222),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.camera_alt_outlined),
+                            SizedBox(width: 6.w),
+                            Text(
+                              _selectedPhotos.isEmpty
+                                  ? 'Attach photo'
+                                  : 'Photos (${_selectedPhotos.length})',
+                              style: TextStyle(
+                                fontSize: 14.sp,
+                                fontFamily: 'Manrope',
                               ),
-                              SizedBox(width: 5.w),
-                              Expanded(
-                                child: Text(
-                                  _selectedPhotos.isEmpty
-                                      ? 'Attach photo'
-                                      : 'Photos (${_selectedPhotos.length})',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontFamily: 'Manrope',
-                                    fontSize: 14.sp,
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.0,
-                                    color: const Color(0xFF222222),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // SELECTED PHOTO PREVIEWS
+                    if (_selectedPhotos.isNotEmpty) ...[
+                      SizedBox(height: 12.h),
+                      Wrap(
+                        spacing: 8.w,
+                        runSpacing: 8.h,
+                        children: List.generate(_selectedPhotos.length, (
+                          index,
+                        ) {
+                          final photo = _selectedPhotos[index];
+
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(7.r),
+                                child: Image.file(
+                                  File(photo.path),
+                                  width: 58.w,
+                                  height: 58.w,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                right: -5.w,
+                                top: -5.h,
+                                child: GestureDetector(
+                                  onTap: _isSaving
+                                      ? null
+                                      : () => _removePhoto(index),
+                                  child: Container(
+                                    width: 19.w,
+                                    height: 19.w,
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 14.sp,
+                                      color: Colors.red,
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
-                          ),
-                        ),
+                          );
+                        }),
                       ),
-
-                      if (_selectedPhotos.isNotEmpty) ...[
-                        SizedBox(height: 8.h),
-                        Text(
-                          '${_selectedPhotos.length} photo(s) selected',
-                          style: TextStyle(
-                            fontSize: 12.sp,
-                            fontFamily: 'Manrope',
-                            color: const Color(0xFF5C5C5C),
-                          ),
-                        ),
-                      ],
                     ],
                   ],
-                ),
+                ],
               ),
             ),
           ),
@@ -416,140 +600,22 @@ class _FrontLeftPopupState extends State<FrontLeftPopup> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String hint,
+  Widget _resultButton({
+    required String text,
+    required bool selected,
+    required Color color,
+    required VoidCallback onTap,
+    IconData? icon,
   }) {
-    return Container(
-      margin: EdgeInsets.only(top: 10.h, right: 14.w, bottom: 10.h, left: 10.w),
-      height: 57.h,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12.r),
-      ),
-      child: TextField(
-        controller: controller,
-        style: TextStyle(
-          fontFamily: 'Manrope',
-          fontWeight: FontWeight.w500,
-          fontSize: 16.sp,
-          color: const Color(0xFF222222),
-        ),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(
-            color: const Color(0xFF5C5C5C),
-            fontWeight: FontWeight.w500,
-            fontFamily: 'Manrope',
-            fontSize: 14.sp,
-          ),
-          contentPadding: EdgeInsets.only(left: 10.w, top: 18.h),
-          border: const OutlineInputBorder(borderSide: BorderSide.none),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLabeledField({
-    required String title,
-    required String hint,
-    required TextEditingController controller,
-    required bool showArrow,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: const Color(0xFF222222),
-            fontWeight: FontWeight.w500,
-            fontFamily: 'Manrope',
-            fontSize: 14.sp,
-          ),
-        ),
-        SizedBox(height: 8.h),
-        Container(
-          height: 57.h,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF5F5F5),
-            borderRadius: BorderRadius.circular(12.r),
-          ),
-          child: TextField(
-            controller: controller,
-            style: TextStyle(
-              fontFamily: 'Manrope',
-              fontWeight: FontWeight.w500,
-              fontSize: 16.sp,
-              color: const Color(0xFF222222),
-            ),
-            decoration: InputDecoration(
-              suffixIcon: showArrow
-                  ? Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 30.sp,
-                      color: const Color(0xFF111111),
-                    )
-                  : null,
-              hintText: hint,
-              hintStyle: TextStyle(
-                color: const Color(0xFF5C5C5C),
-                fontWeight: FontWeight.w500,
-                fontFamily: 'Manrope',
-                fontSize: 14.sp,
-              ),
-              contentPadding: EdgeInsets.only(left: 10.w, top: 18.h),
-              border: const OutlineInputBorder(borderSide: BorderSide.none),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-enum ResultType { fail, pass, normal }
-
-class _ResultButton extends StatelessWidget {
-  final String text;
-  final ResultType type;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _ResultButton({
-    required this.text,
-    required this.type,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    Color textColor;
-
-    switch (type) {
-      case ResultType.fail:
-        textColor = const Color(0xFFE90000);
-        break;
-      case ResultType.pass:
-        textColor = const Color(0xFF449400);
-        break;
-      case ResultType.normal:
-        textColor = const Color(0xFF3E3E3E);
-        break;
-    }
-
     return GestureDetector(
-      onTap: onTap,
+      onTap: _isSaving ? null : onTap,
       child: Container(
         height: 38.h,
         decoration: BoxDecoration(
           color: const Color(0xFFF5F5F5),
           borderRadius: BorderRadius.circular(13.r),
           border: Border.all(
-            color: selected ? textColor : Colors.transparent,
+            color: selected ? color : Colors.transparent,
             width: 1.2.w,
           ),
         ),
@@ -557,28 +623,17 @@ class _ResultButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (type == ResultType.fail)
-                Icon(
-                  Icons.cancel_outlined,
-                  size: 20.sp,
-                  color: const Color(0xFFE90000),
-                ),
-              if (type == ResultType.pass)
-                Icon(
-                  Icons.check_circle_outline,
-                  size: 20.sp,
-                  color: const Color(0xFF449400),
-                ),
-              if (type == ResultType.fail || type == ResultType.pass)
+              if (icon != null) ...[
+                Icon(icon, size: 18.sp, color: color),
                 SizedBox(width: 5.w),
+              ],
               Text(
                 text,
                 style: TextStyle(
                   fontFamily: 'Manrope',
-                  fontSize: 16.sp,
+                  fontSize: 15.sp,
                   fontWeight: FontWeight.w600,
-                  height: 1.0,
-                  color: textColor,
+                  color: color,
                 ),
               ),
             ],
@@ -587,51 +642,66 @@ class _ResultButton extends StatelessWidget {
       ),
     );
   }
-}
 
-class _DefectButton extends StatelessWidget {
-  final String text;
-  final bool selected;
-  final VoidCallback onTap;
+  Widget _defectButton(String text) {
+    final selected = selectedDefects.contains(text);
 
-  const _DefectButton({
-    required this.text,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: _isSaving ? null : () => _toggleDefect(text),
       child: Container(
-        height: 46.h,
+        height: 42.h,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFFFEEEE) : const Color(0xFFFFFFFF),
+          color: selected ? const Color(0xFFFFEEEE) : Colors.white,
           border: Border.all(
             color: selected ? const Color(0xFFE90000) : const Color(0xFFE8E8E8),
-            width: 1.w,
           ),
-          borderRadius: BorderRadius.circular(32.r),
+          borderRadius: BorderRadius.circular(30.r),
         ),
-        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 10.h),
-        child: Center(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: 'Manrope',
-              fontSize: 14.sp,
-              fontWeight: FontWeight.w600,
-              height: 1.0,
-              color: selected
-                  ? const Color(0xFFE90000)
-                  : const Color(0xFF222222),
-            ),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w600,
+            color: selected ? const Color(0xFFE90000) : const Color(0xFF222222),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _labeledField({
+    required String title,
+    required String hint,
+    required TextEditingController controller,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontFamily: 'Manrope',
+            fontSize: 14.sp,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        SizedBox(height: 8.h),
+        TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            hintText: hint,
+            filled: true,
+            fillColor: const Color(0xFFF5F5F5),
+            contentPadding: EdgeInsets.all(12.w),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12.r),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

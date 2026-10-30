@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:rootysysproject/repositories/models/completeinspection_model.dart';
+
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:rootysysproject/screens/Profile_screen.dart';
 import 'package:rootysysproject/repositories/Api/api_client.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:rootysysproject/bloc/inspectiondetail/bloc/inspectiondetail_bloc.dart';
+import 'package:rootysysproject/bloc/inspectiondetail/bloc/inspectiondetail_event.dart';
+import 'package:rootysysproject/bloc/inspectiondetail/bloc/inspectiondetail_state.dart';
+import 'package:rootysysproject/repositories/Api/inspectiondetails_api.dart';
+import 'package:rootysysproject/repositories/models/inspectiondetails_model.dart';
+
+import 'package:rootysysproject/screens/reportsdetails_screen.dart';
 
 class ReportsScreen extends StatefulWidget {
   const ReportsScreen({super.key});
@@ -350,182 +360,188 @@ class _ReportsScreenState extends State<ReportsScreen> {
       color: background,
       child: Stack(
         children: [
-          SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.only(
-              left: 8.w,
-              right: 8.w,
-              top: 8.h,
-              bottom: 95.h,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(height: 50.h),
+          RefreshIndicator(
+            onRefresh: _refreshReports,
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.only(
+                left: 8.w,
+                right: 8.w,
+                top: 8.h,
+                bottom: 95.h,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(height: 50.h),
 
-                // -------------------------------------------------
-                // HEADER
-                // -------------------------------------------------
-                SizedBox(
-                  height: 34.h,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Image.asset(
-                        'assets/images/Layer_1.png',
-                        width: 89.w,
-                        height: 24.h,
-                        fit: BoxFit.contain,
-                      ),
+                  // -------------------------------------------------
+                  // HEADER
+                  // -------------------------------------------------
+                  SizedBox(
+                    height: 34.h,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Image.asset(
+                          'assets/images/Layer_1.png',
+                          width: 89.w,
+                          height: 24.h,
+                          fit: BoxFit.contain,
+                        ),
 
-                      SizedBox(
-                        width: 34.w,
-                        height: 34.h,
-                        child: GestureDetector(
-                          onTap: () {
-                            showGeneralDialog(
-                              context: context,
-                              barrierDismissible: true,
-                              barrierLabel: 'Profile',
-                              barrierColor: Colors.black.withOpacity(0.15),
-                              transitionDuration: const Duration(
-                                milliseconds: 200,
-                              ),
-                              pageBuilder:
-                                  (context, animation, secondaryAnimation) {
-                                    return const ProfileScreen();
-                                  },
-                            );
-                          },
-                          child: Image.asset(
-                            'assets/images/Frame 15.png',
-                            height: 14.h,
-                            width: 14.w,
+                        SizedBox(
+                          width: 34.w,
+                          height: 34.h,
+                          child: GestureDetector(
+                            onTap: () {
+                              showGeneralDialog(
+                                context: context,
+                                barrierDismissible: true,
+                                barrierLabel: 'Profile',
+                                barrierColor: Colors.black.withOpacity(0.15),
+                                transitionDuration: const Duration(
+                                  milliseconds: 200,
+                                ),
+                                pageBuilder:
+                                    (context, animation, secondaryAnimation) {
+                                      return const ProfileScreen();
+                                    },
+                              );
+                            },
+                            child: Image.asset(
+                              'assets/images/Frame 15.png',
+                              height: 14.h,
+                              width: 14.w,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                SizedBox(height: 30.h),
-
-                // -------------------------------------------------
-                // SEARCH
-                // -------------------------------------------------
-                Container(
-                  width: double.infinity,
-                  height: 48.h,
-                  padding: EdgeInsets.only(
-                    top: 10.h,
-                    right: 10.w,
-                    bottom: 10.h,
-                    left: 16.w,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8E8E8),
-                    borderRadius: BorderRadius.circular(32.r),
-                  ),
-                  child: TextField(
-                    controller: searchController,
-                    textAlignVertical: TextAlignVertical.center,
-                    onChanged: (value) {
-                      setState(() {});
-                    },
-                    style: TextStyle(
-                      fontFamily: 'Manrope',
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.w400,
-                      color: black,
+                      ],
                     ),
-                    decoration: InputDecoration(
-                      hintText: 'Search reports...',
-                      hintStyle: TextStyle(
+                  ),
+
+                  SizedBox(height: 30.h),
+
+                  // -------------------------------------------------
+                  // SEARCH
+                  // -------------------------------------------------
+                  Container(
+                    width: double.infinity,
+                    height: 48.h,
+                    padding: EdgeInsets.only(
+                      top: 10.h,
+                      right: 10.w,
+                      bottom: 10.h,
+                      left: 16.w,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8E8E8),
+                      borderRadius: BorderRadius.circular(32.r),
+                    ),
+                    child: TextField(
+                      controller: searchController,
+                      textAlignVertical: TextAlignVertical.center,
+                      onChanged: (value) {
+                        setState(() {});
+                      },
+                      style: TextStyle(
                         fontFamily: 'Manrope',
                         fontSize: 12.sp,
                         fontWeight: FontWeight.w400,
-                        color: grayText,
+                        color: black,
                       ),
-                      border: InputBorder.none,
-                      isCollapsed: true,
-                      contentPadding: EdgeInsets.symmetric(
-                        horizontal: 0.w,
-                        vertical: 4.h,
+                      decoration: InputDecoration(
+                        hintText: 'Search reports...',
+                        hintStyle: TextStyle(
+                          fontFamily: 'Manrope',
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w400,
+                          color: grayText,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.only(
+                          left: 5.h,
+                          top: 0.h, // Increase this to move text down
+                          bottom: 0.h,
+                        ),
                       ),
                     ),
                   ),
-                ),
 
-                SizedBox(height: 25.h),
+                  SizedBox(height: 25.h),
 
-                // -------------------------------------------------
-                // FILTER BUTTONS
-                // -------------------------------------------------
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _buildFilterButton('All'),
-                      SizedBox(width: 9.w),
-                      _buildFilterButton('Pending'),
-                      SizedBox(width: 9.w),
-                      _buildFilterButton('Passed'),
-                      SizedBox(width: 9.w),
-                      _buildFilterButton('Failed'),
-                    ],
+                  // -------------------------------------------------
+                  // FILTER BUTTONS
+                  // -------------------------------------------------
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _buildFilterButton('All'),
+                        SizedBox(width: 9.w),
+                        _buildFilterButton('Pending'),
+                        SizedBox(width: 9.w),
+                        _buildFilterButton('Passed'),
+                        SizedBox(width: 9.w),
+                        _buildFilterButton('Failed'),
+                      ],
+                    ),
                   ),
-                ),
 
-                SizedBox(height: 18.h),
+                  SizedBox(height: 18.h),
 
-                // -------------------------------------------------
-                // REPORT LIST
-                // -------------------------------------------------
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: reportsFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return SizedBox(
-                        height: 220.h,
-                        child: const Center(child: CircularProgressIndicator()),
-                      );
-                    }
-
-                    if (snapshot.hasError) {
-                      return _buildMessage(
-                        message: 'Unable to load reports.\n${snapshot.error}',
-                        icon: Icons.error_outline,
-                        showRetry: true,
-                      );
-                    }
-
-                    final reports = snapshot.data ?? [];
-
-                    final filteredReports = _getFilteredReports(reports);
-
-                    if (filteredReports.isEmpty) {
-                      return _buildMessage(
-                        message: reports.isEmpty
-                            ? 'No inspection reports found.'
-                            : 'No reports match your search or filter.',
-                        icon: Icons.description_outlined,
-                        showRetry: true,
-                      );
-                    }
-
-                    return Column(
-                      children: filteredReports.map((report) {
-                        return Padding(
-                          padding: EdgeInsets.only(bottom: 9.h),
-                          child: _buildReportCard(report: report),
+                  // -------------------------------------------------
+                  // REPORT LIST
+                  // -------------------------------------------------
+                  FutureBuilder<List<Map<String, dynamic>>>(
+                    future: reportsFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return SizedBox(
+                          height: 220.h,
+                          child: const Center(
+                            child: CircularProgressIndicator(),
+                          ),
                         );
-                      }).toList(),
-                    );
-                  },
-                ),
+                      }
 
-                SizedBox(height: 100.h),
-              ],
+                      if (snapshot.hasError) {
+                        return _buildMessage(
+                          message: 'Unable to load reports.\n${snapshot.error}',
+                          icon: Icons.error_outline,
+                          showRetry: true,
+                        );
+                      }
+
+                      final reports = snapshot.data ?? [];
+
+                      final filteredReports = _getFilteredReports(reports);
+
+                      if (filteredReports.isEmpty) {
+                        return _buildMessage(
+                          message: reports.isEmpty
+                              ? 'No inspection reports found.'
+                              : 'No reports match your search or filter.',
+                          icon: Icons.description_outlined,
+                          showRetry: true,
+                        );
+                      }
+
+                      return Column(
+                        children: filteredReports.map((report) {
+                          return Padding(
+                            padding: EdgeInsets.only(bottom: 9.h),
+                            child: _buildReportCard(report: report),
+                          );
+                        }).toList(),
+                      );
+                    },
+                  ),
+
+                  SizedBox(height: 100.h),
+                ],
+              ),
             ),
           ),
         ],
@@ -636,163 +652,166 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
     }
 
-    return Container(
-      width: double.infinity,
-      constraints: BoxConstraints(minHeight: 96.h),
-      padding: EdgeInsets.all(8.w),
-      decoration: BoxDecoration(
-        color: white,
-        borderRadius: BorderRadius.circular(15.r),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // -------------------------------------------------
-          // VEHICLE IMAGE
-          // -------------------------------------------------
-          Container(
-            width: 80.w,
-            height: 80.h,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F0F0),
-              borderRadius: BorderRadius.circular(8.r),
+    return GestureDetector(
+      onTap: () {
+        _openReportDetails(report);
+      },
+      child: Container(
+        width: double.infinity,
+        constraints: BoxConstraints(minHeight: 96.h),
+        padding: EdgeInsets.all(8.w),
+        decoration: BoxDecoration(
+          color: white,
+          borderRadius: BorderRadius.circular(15.r),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Vehicle image
+            Container(
+              width: 80.w,
+              height: 80.h,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F0F0),
+                borderRadius: BorderRadius.circular(8.r),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return _vehiclePlaceholder();
+                      },
+                    )
+                  : Image.asset(
+                      'assets/images/vehicle.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return _vehiclePlaceholder();
+                      },
+                    ),
             ),
-            clipBehavior: Clip.antiAlias,
-            child: imageUrl != null && imageUrl.isNotEmpty
-                ? Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return _vehiclePlaceholder();
-                    },
-                  )
-                : Image.asset(
-                    'assets/images/vehicle.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return _vehiclePlaceholder();
-                    },
-                  ),
-          ),
 
-          SizedBox(width: 11.w),
+            SizedBox(width: 11.w),
 
-          // -------------------------------------------------
-          // REPORT DETAILS
-          // -------------------------------------------------
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w400,
-                    color: grayText,
-                    height: 1.2,
-                  ),
-                ),
-
-                SizedBox(height: 5.h),
-
-                Text(
-                  vehicle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontSize: 13.sp,
-                    fontWeight: FontWeight.w600,
-                    color: black,
-                    height: 1.2,
-                  ),
-                ),
-
-                if (inspectionNo.isNotEmpty) ...[
-                  SizedBox(height: 4.h),
+            // -------------------------------------------------
+            // REPORT DETAILS
+            // -------------------------------------------------
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    inspectionNo,
+                    title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontFamily: 'Manrope',
-                      fontSize: 10.sp,
+                      fontSize: 12.sp,
+                      fontWeight: FontWeight.w400,
                       color: grayText,
+                      height: 1.2,
                     ),
                   ),
-                ],
 
-                SizedBox(height: 5.h),
+                  SizedBox(height: 5.h),
 
-                Row(
-                  children: [
-                    Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 7.w,
-                        vertical: 3.h,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _statusBackground(status),
-                        borderRadius: BorderRadius.circular(10.r),
-                      ),
-                      child: Text(
-                        status,
-                        style: TextStyle(
-                          fontFamily: 'Manrope',
-                          fontSize: 10.sp,
-                          fontWeight: FontWeight.w500,
-                          color: _statusColor(status),
-                        ),
-                      ),
+                  Text(
+                    vehicle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                      color: black,
+                      height: 1.2,
                     ),
+                  ),
 
-                    const Spacer(),
-
-                    GestureDetector(
-                      onTap: () {
-                        _openReportDetails(report);
-                      },
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'See',
-                            style: TextStyle(
-                              fontFamily: 'Manrope',
-                              fontSize: 12.sp,
-                              fontWeight: FontWeight.w500,
-                              color: black,
-                              height: 1,
-                            ),
-                          ),
-                          SizedBox(width: 4.w),
-                          Container(
-                            width: 14.w,
-                            height: 14.h,
-                            decoration: const BoxDecoration(
-                              color: green,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.chevron_right,
-                              size: 12.sp,
-                              color: black,
-                            ),
-                          ),
-                        ],
+                  if (inspectionNo.isNotEmpty) ...[
+                    SizedBox(height: 4.h),
+                    Text(
+                      inspectionNo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Manrope',
+                        fontSize: 10.sp,
+                        color: grayText,
                       ),
                     ),
                   ],
-                ),
-              ],
+
+                  SizedBox(height: 5.h),
+
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 7.w,
+                          vertical: 3.h,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _statusBackground(status),
+                          borderRadius: BorderRadius.circular(10.r),
+                        ),
+                        child: Text(
+                          status,
+                          style: TextStyle(
+                            fontFamily: 'Manrope',
+                            fontSize: 10.sp,
+                            fontWeight: FontWeight.w500,
+                            color: _statusColor(status),
+                          ),
+                        ),
+                      ),
+
+                      const Spacer(),
+
+                      GestureDetector(
+                        onTap: () {
+                          _openReportDetails(report);
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'See',
+                              style: TextStyle(
+                                fontFamily: 'Manrope',
+                                fontSize: 12.sp,
+                                fontWeight: FontWeight.w500,
+                                color: black,
+                                height: 1,
+                              ),
+                            ),
+                            SizedBox(width: 4.w),
+                            Container(
+                              width: 14.w,
+                              height: 14.h,
+                              decoration: const BoxDecoration(
+                                color: green,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.chevron_right,
+                                size: 12.sp,
+                                color: black,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -844,35 +863,410 @@ class _ReportsScreenState extends State<ReportsScreen> {
   // =========================================================
   // OPEN REPORT DETAILS
   // =========================================================
-
   void _openReportDetails(Map<String, dynamic> report) {
-    final inspectionId = _stringValue(report['_id'] ?? report['id']);
+    final inspection = InspectionCompletedData.fromJson(report);
 
-    if (inspectionId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Inspection ID not available')),
-      );
-      return;
-    }
-
-    // The inspection ID is available here.
-    // Navigate to your inspection-details screen using this ID.
-    //
-    // Example:
-    //
-    // Navigator.push(
-    //   context,
-    //   MaterialPageRoute(
-    //     builder: (_) => InspectionDetailsScreen(
-    //       inspectionId: inspectionId,
-    //     ),
-    //   ),
-    // );
-
-    debugPrint('Selected inspection ID: $inspectionId');
-
-    ScaffoldMessenger.of(
+    Navigator.push(
       context,
-    ).showSnackBar(SnackBar(content: Text('Selected report: $inspectionId')));
+      MaterialPageRoute(
+        builder: (context) => FetchreportsScreen(report: inspection),
+      ),
+    );
+  }
+}
+
+// Open the details sheet and fetch the selected inspection by ID.
+
+/// Shows the selected inspection details returned by the detail API.
+/// This widget is in the same file so the ReportsScreen integration
+/// remains in one Dart file.
+class VehicleInspectionDetailsSheet extends StatelessWidget {
+  final String inspectionId;
+
+  const VehicleInspectionDetailsSheet({super.key, required this.inspectionId});
+
+  static const Color _green = Color(0xFF73F700);
+  static const Color _black = Color(0xFF000000);
+  static const Color _gray = Color(0xFF808080);
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.88,
+        decoration: const BoxDecoration(
+          color: Color(0xFFF7F7F7),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 12),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Inspection Details',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: _black,
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 34.w,
+                    height: 34.h,
+                    child: GestureDetector(
+                      onTap: () {
+                        showGeneralDialog(
+                          context: context,
+                          barrierDismissible: true,
+                          barrierLabel: 'Profile',
+                          barrierColor: Colors.black.withOpacity(0.15),
+                          transitionDuration: const Duration(milliseconds: 200),
+                          pageBuilder:
+                              (context, animation, secondaryAnimation) {
+                                return const ProfileScreen();
+                              },
+                        );
+                      },
+                      child: Image.asset(
+                        'assets/images/Frame 15.png',
+                        height: 14.h,
+                        width: 14.w,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: BlocBuilder<VehicleInspectionBloc, VehicleInspectionState>(
+                builder: (context, state) {
+                  if (state is VehicleInspectionLoading ||
+                      state is VehicleInspectionInitial) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (state is VehicleInspectionFailure) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 42,
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Unable to load inspection details',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              state.message,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: _gray),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () {
+                                context.read<VehicleInspectionBloc>().add(
+                                  FetchVehicleInspection(
+                                    inspectionId: inspectionId,
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (state is VehicleInspectionSuccess) {
+                    final data = state.inspection.data;
+
+                    if (data == null) {
+                      return const Center(
+                        child: Text('Inspection details are empty.'),
+                      );
+                    }
+
+                    return _buildInspectionContent(data);
+                  }
+
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInspectionContent(InspectionData data) {
+    final customerName = data.customer?.user?.name ?? 'Not available';
+    final vehicle = data.vehicle;
+    final vehicleName = [
+      vehicle?.brand?.name ?? '',
+      vehicle?.model?.name ?? '',
+      vehicle?.variant?.name ?? '',
+    ].where((value) => value.isNotEmpty).join(' ');
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      children: [
+        _sectionTitle('Inspection Summary'),
+        _detailCard([
+          _detailRow('Inspection number', data.inspectionNo),
+          _detailRow(
+            'Inspection type',
+            data.inspectionType?.name ?? 'Not available',
+          ),
+          _detailRow('Customer', customerName),
+          _detailRow('Inspector', data.inspector?.name ?? 'Not available'),
+          _detailRow('Date', data.inspectionDate ?? 'Not available'),
+          _detailRow('Status', data.status),
+        ]),
+        const SizedBox(height: 16),
+        _sectionTitle('Vehicle Information'),
+        _detailCard([
+          _detailRow(
+            'Vehicle',
+            vehicleName.isEmpty ? 'Not available' : vehicleName,
+          ),
+          _detailRow('Plate number', vehicle?.plateNumber ?? 'Not available'),
+          _detailRow(
+            'Year',
+            vehicle == null || vehicle.year == 0
+                ? 'Not available'
+                : vehicle.year.toString(),
+          ),
+          _detailRow('VIN', vehicle?.vin ?? 'Not available'),
+          _detailRow('Engine number', vehicle?.engineNumber ?? 'Not available'),
+          _detailRow('Fuel type', vehicle?.fuelType?.name ?? 'Not available'),
+          _detailRow(
+            'Transmission',
+            vehicle?.transmission?.name ?? 'Not available',
+          ),
+          _detailRow(
+            'Odometer',
+            vehicle == null ? 'Not available' : vehicle.odometer.toString(),
+          ),
+        ]),
+        const SizedBox(height: 16),
+        _sectionTitle('Inspection Result'),
+        _detailCard([
+          _detailRow('Overall score', data.overallScore.toString()),
+          _detailRow('Total weight', data.totalWeight.toString()),
+          _detailRow('Gained score', data.gainedScore.toString()),
+          _detailRow('Passed', data.passCount.toString()),
+          _detailRow('Failed', data.failCount.toString()),
+          _detailRow('N/A', data.naCount.toString()),
+          _detailRow('N/C', data.ncCount.toString()),
+        ]),
+        const SizedBox(height: 16),
+        _sectionTitle('Inspection Categories'),
+        if (data.categories.isEmpty)
+          const Text(
+            'No inspection categories available.',
+            style: TextStyle(color: _gray),
+          )
+        else
+          ...data.categories.map((category) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    category.category?.name ?? 'Category',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: _black,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (category.items.isEmpty)
+                    const Text(
+                      'No items in this category.',
+                      style: TextStyle(color: _gray),
+                    )
+                  else
+                    ...category.items.map((item) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            top: BorderSide(color: Color(0xFFEAEAEA)),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.item?.name ?? 'Inspection item',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      color: _black,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _statusBackground(item.status),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    item.status.isEmpty
+                                        ? 'Unknown'
+                                        : item.status,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: _statusColor(item.status),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (item.comment.isNotEmpty) ...[
+                              const SizedBox(height: 5),
+                              Text(
+                                item.comment,
+                                style: const TextStyle(
+                                  color: _gray,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                            if (item.selectedDefects.isNotEmpty) ...[
+                              const SizedBox(height: 5),
+                              Text(
+                                'Defects: ${item.selectedDefects.join(', ')}',
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: _black,
+        ),
+      ),
+    );
+  }
+
+  Widget _detailCard(List<Widget> children) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(children: children),
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              label,
+              style: const TextStyle(color: _gray, fontSize: 12),
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value.isEmpty ? 'Not available' : value,
+              textAlign: TextAlign.end,
+              style: const TextStyle(
+                color: _black,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _statusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pass':
+      case 'passed':
+        return Colors.green.shade800;
+      case 'fail':
+      case 'failed':
+        return Colors.red.shade800;
+      case 'n/a':
+        return Colors.orange.shade800;
+      default:
+        return _gray;
+    }
+  }
+
+  Color _statusBackground(String status) {
+    switch (status.toLowerCase()) {
+      case 'pass':
+      case 'passed':
+        return Colors.green.shade50;
+      case 'fail':
+      case 'failed':
+        return Colors.red.shade50;
+      case 'n/a':
+        return Colors.orange.shade50;
+      default:
+        return const Color(0xFFF0F0F0);
+    }
   }
 }

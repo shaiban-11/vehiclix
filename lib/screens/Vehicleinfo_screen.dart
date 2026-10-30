@@ -29,6 +29,9 @@ import 'package:rootysysproject/bloc/vehicle_model/bloc/vehicle_model_state.dart
 import 'package:rootysysproject/bloc/vehicle_varients/bloc/vehicle_varients_bloc.dart';
 import 'package:rootysysproject/bloc/vehicle_varients/bloc/vehicle_varients_event.dart';
 import 'package:rootysysproject/bloc/vehicle_varients/bloc/vehicle_varients_state.dart';
+import 'package:rootysysproject/repositories/Api/api_client.dart';
+import 'package:rootysysproject/repositories/models/Vehicle_model.dart';
+import 'package:rootysysproject/repositories/models/Vehicle_verients.dart';
 import 'package:rootysysproject/screens/SelectinspectionBottmsheet_screen.dart';
 
 class VehicleInformationScreen extends StatefulWidget {
@@ -52,9 +55,19 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
   bool get isEditMode => widget.vehicleId != null;
 
   final ImagePicker _picker = ImagePicker();
-  File? selectedImage;
+
+  final ApiClient _apiClient = ApiClient();
+
+  final List<File> selectedImages = [];
+
+  final List<String> existingImageUrls = [];
+
+  final List<String> uploadedImageUrls = [];
+
+  bool isUploadingImage = false;
 
   String? selectedBrand;
+  String? selectedBrandId;
   String? selectedBodyType;
   String? selectedModel;
   String? selectedModelId;
@@ -64,6 +77,7 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
   String? selectedCountrySpec;
   String? selectedCountrySpecId;
   bool isCreatingVehicle = false;
+  String? selectedVariantId;
 
   final modelYearController = TextEditingController();
   final registrationController = TextEditingController();
@@ -77,7 +91,32 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
     super.initState();
 
     final vehicle = widget.initialVehicle;
+
+    // Debug: screen-ലേക്ക് ഏത് vehicle data ആണ് വരുന്നത്?
+
     if (vehicle != null) {
+      final images = vehicle['vehicle_images'] ?? vehicle['images'];
+
+      if (images is List) {
+        for (final image in images) {
+          if (image is Map) {
+            final url = image['url'] ?? image['image_url'] ?? image['imageUrl'];
+
+            if (url != null && url.toString().isNotEmpty) {
+              existingImageUrls.add(url.toString());
+            }
+          } else if (image is String && image.isNotEmpty) {
+            existingImageUrls.add(image);
+          }
+        }
+      } else {
+        final image =
+            vehicle['image_url'] ?? vehicle['imageUrl'] ?? vehicle['photo'];
+
+        if (image != null && image.toString().isNotEmpty) {
+          existingImageUrls.add(image.toString());
+        }
+      }
       modelYearController.text =
           _readVehicleValue([
             vehicle['year'],
@@ -119,6 +158,12 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
         nameKeys: const ['brand_name', 'brandName'],
         objectKeys: const ['brand', 'brand_id', 'brandId'],
       );
+
+      selectedBrandId = _readVehicleValue([
+        vehicle['brand_id'],
+        vehicle['brandId'],
+      ]);
+
       selectedBodyType = _readVehicleObject(
         vehicle,
         nameKeys: const [
@@ -132,24 +177,27 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
       selectedModel = _readVehicleObject(
         vehicle,
         nameKeys: const ['model_name', 'modelName'],
-        objectKeys: const ['model', 'vehicle_model', 'vehicleModel'],
+        objectKeys: const ['model', 'model_id', 'vehicle_model'],
       );
+
       selectedModelId = _readVehicleValue([
         vehicle['model_id'],
         vehicle['modelId'],
         vehicle['vehicle_model_id'],
         vehicle['vehicleModelId'],
-        _nestedVehicleValue(
-          vehicle,
-          const ['model', 'vehicle_model', 'vehicleModel'],
-          const ['_id', 'id', 'model_id', 'modelId'],
-        ),
       ]);
       selectedVariant = _readVehicleObject(
         vehicle,
         nameKeys: const ['variant_name', 'variantName'],
-        objectKeys: const ['variant', 'vehicle_variant', 'vehicleVariant'],
+        objectKeys: const ['variant', 'variant_id'],
       );
+
+      selectedVariantId = _readVehicleValue([
+        vehicle['variant_id'],
+        vehicle['variantId'],
+        vehicle['vehicle_variant_id'],
+        vehicle['vehicleVariantId'],
+      ]);
       selectedFuelType = _readVehicleObject(
         vehicle,
         nameKeys: const [
@@ -210,24 +258,34 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
   }
 
   /// Returns the first non-empty value, including values inside nested maps.
+
   String? _readVehicleValue(List<dynamic> values) {
     for (final value in values) {
       if (value == null) continue;
+
       if (value is Map) {
+        // ID എടുക്കുമ്പോൾ ആദ്യം ID keys നോക്കണം
         final nested =
-            value['name'] ??
-            value['title'] ??
-            value['value'] ??
             value['_id'] ??
-            value['id'];
+            value['id'] ??
+            value['name'] ??
+            value['model_name'] ??
+            value['variant_name'] ??
+            value['title'] ??
+            value['value'];
+
         if (nested != null && nested.toString().trim().isNotEmpty) {
           return nested.toString().trim();
         }
         continue;
       }
+
       final text = value.toString().trim();
-      if (text.isNotEmpty && text != 'null') return text;
+      if (text.isNotEmpty && text != 'null') {
+        return text;
+      }
     }
+
     return null;
   }
 
@@ -301,6 +359,10 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
     engineController.dispose();
     chassisController.dispose();
     odometerController.dispose();
+    countrypsecController.dispose();
+
+    _apiClient.close();
+
     super.dispose();
   }
 
@@ -314,14 +376,12 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
   Future<void> _createVehicle() async {
     if (isCreatingVehicle) return;
 
-    if (widget.customerId.trim().isEmpty) {
-      _showMessage('Customer ID is missing');
+    if (isUploadingImage) {
+      _showMessage('Please wait until the photo upload finishes');
       return;
     }
-    if (isEditMode && widget.vehicleId!.trim().isEmpty) {
-      _showMessage('Vehicle ID is missing');
-      return;
-    }
+
+    // Keep the rest of your existing _createVehicle() method.
 
     if (selectedBrand == null ||
         selectedBodyType == null ||
@@ -408,6 +468,8 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
       return;
     }
 
+    final allImageUrls = [...existingImageUrls, ...uploadedImageUrls];
+
     final Map<String, dynamic> requestBody = {
       'variant_id': variantId,
       'year': year,
@@ -418,13 +480,15 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
       'transmission_id': transmissionId,
       'country_spec': selectedCountrySpecId,
       'odometer': odometer,
+
+      if (allImageUrls.isNotEmpty)
+        'vehicle_images': allImageUrls.map((url) => {'url': url}).toList(),
     };
 
-    debugPrint(
-      '${isEditMode ? 'UPDATE' : 'CREATE'} customer: ${widget.customerId}',
-    );
-    debugPrint('Vehicle request body: $requestBody');
+    debugPrint('ALL IMAGE URLS: $allImageUrls');
+    debugPrint('REQUEST BODY: $requestBody');
 
+    debugPrint('UPDATE MODE: $isEditMode');
     setState(() => isCreatingVehicle = true);
     if (isEditMode) {
       context.read<UpdateVehicleInfoBloc>().add(
@@ -453,10 +517,28 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
           setState(() => isCreatingVehicle = true);
         } else if (state is UpdateVehicleInfoSuccess) {
           setState(() => isCreatingVehicle = false);
+
           _showMessage(
             state.response.message ?? 'Vehicle updated successfully',
           );
-          Navigator.pop(context, true);
+
+          final vehicleId = widget.vehicleId;
+
+          if (vehicleId == null || vehicleId.isEmpty) {
+            _showMessage('Vehicle ID not found');
+            return;
+          }
+
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            backgroundColor: Colors.transparent,
+            builder: (sheetContext) => SelectInspectionBottomSheet(
+              onFullInspectionTap: () => Navigator.pop(sheetContext),
+              vehicleid: vehicleId,
+              customerid: widget.customerId,
+            ),
+          );
         } else if (state is UpdateVehicleInfoFailure) {
           setState(() => isCreatingVehicle = false);
           _showMessage(state.message);
@@ -553,7 +635,26 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
                                     ? selectedBrand
                                     : null,
                                 names,
-                                (v) => setState(() => selectedBrand = v),
+                                (v) {
+                                  if (v == null) return;
+
+                                  final brands = state.brandResponse.data;
+                                  final selected = brands
+                                      .where((e) => e.name == v)
+                                      .toList();
+
+                                  setState(() {
+                                    selectedBrand = v;
+                                    selectedBrandId = selected.isNotEmpty
+                                        ? selected.first.id
+                                        : null;
+
+                                    // Brand മാറുമ്പോൾ പഴയ model, variant എന്നിവ reset ചെയ്യുക
+                                    selectedModel = null;
+                                    selectedModelId = null;
+                                    selectedVariant = null;
+                                  });
+                                },
                               );
                             }
                             return _dropdown(
@@ -600,6 +701,7 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
                                 (_) {},
                               );
                             }
+
                             if (state is VehicleModelFailure) {
                               return _retry(
                                 'Unable to load vehicle models',
@@ -608,45 +710,123 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
                                 ),
                               );
                             }
+
                             if (state is VehicleModelSuccess) {
-                              final models =
+                              final allModels =
                                   state.vehicleModelResponse.data ?? [];
-                              final names = models
-                                  .map((e) => e.name)
+
+                              VehicleModelData? oldModel;
+
+                              for (final model in allModels) {
+                                if (model.id?.trim() ==
+                                    selectedModelId?.trim()) {
+                                  oldModel = model;
+                                  break;
+                                }
+                              }
+
+                              if (oldModel == null && selectedModel != null) {
+                                for (final model in allModels) {
+                                  if (model.name?.trim().toLowerCase() ==
+                                      selectedModel!.trim().toLowerCase()) {
+                                    oldModel = model;
+                                    break;
+                                  }
+                                }
+                              }
+
+                              if (oldModel != null) {
+                                selectedModel = oldModel.name;
+                                selectedModelId = oldModel.id;
+
+                                if (selectedBrandId == null ||
+                                    selectedBrandId!.isEmpty) {
+                                  selectedBrandId = oldModel.brandId;
+                                }
+
+                                if (selectedBrand == null ||
+                                    selectedBrand!.isEmpty) {
+                                  final brands = context
+                                      .read<BrandBloc>()
+                                      .state;
+
+                                  if (brands is BrandSuccess) {
+                                    for (final brand
+                                        in brands.brandResponse.data) {
+                                      if (brand.id == oldModel.brandId) {
+                                        selectedBrand = brand.name;
+                                        selectedBrandId = brand.id;
+                                        break;
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+
+                              // Selected brand അനുസരിച്ച് models filter ചെയ്യുക
+                              final filteredModels = allModels.where((model) {
+                                if (selectedBrandId == null ||
+                                    selectedBrandId!.trim().isEmpty) {
+                                  return model.id == selectedModelId;
+                                }
+
+                                return model.brandId?.trim() ==
+                                    selectedBrandId!.trim();
+                              }).toList();
+
+                              final names = filteredModels
+                                  .map((model) => model.name?.trim())
                                   .whereType<String>()
-                                  .where((e) => e.trim().isNotEmpty)
+                                  .where((name) => name.isNotEmpty)
                                   .toSet()
                                   .toList();
-                              // If initial model name is supplied, restore its model ID.
-                              final preselected = models
-                                  .where((e) => e.name == selectedModel)
-                                  .toList();
+
+                              // Model ID ലഭ്യമല്ലെങ്കിലും name ഉപയോഗിച്ച് കണ്ടെത്തുക
                               if (selectedModelId == null &&
-                                  preselected.isNotEmpty) {
-                                selectedModelId = preselected.first.id;
+                                  selectedModel != null) {
+                                for (final model in filteredModels) {
+                                  if (model.name?.trim() ==
+                                      selectedModel!.trim()) {
+                                    selectedModelId = model.id;
+                                    break;
+                                  }
+                                }
                               }
+
                               return _dropdown(
-                                names.isEmpty
+                                selectedBrandId == null
+                                    ? 'Select brand first'
+                                    : names.isEmpty
                                     ? 'No models available'
                                     : 'Select model',
                                 names.contains(selectedModel)
                                     ? selectedModel
                                     : null,
                                 names,
-                                (v) {
-                                  final found = models
-                                      .where((e) => e.name == v)
-                                      .toList();
+                                (value) {
+                                  if (value == null) return;
+
+                                  VehicleModelData? selected;
+
+                                  for (final model in filteredModels) {
+                                    if (model.name?.trim() == value.trim()) {
+                                      selected = model;
+                                      break;
+                                    }
+                                  }
+
                                   setState(() {
-                                    selectedModel = v;
-                                    selectedModelId = found.isNotEmpty
-                                        ? found.first.id
-                                        : null;
+                                    selectedModel = value;
+                                    selectedModelId = selected?.id;
+
+                                    // Model മാറുമ്പോൾ പഴയ variant reset ചെയ്യണം
                                     selectedVariant = null;
+                                    selectedVariantId = null;
                                   });
                                 },
                               );
                             }
+
                             return _dropdown(
                               'Select model',
                               null,
@@ -668,6 +848,7 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
                                 (_) {},
                               );
                             }
+
                             if (state is VehicleVarientsFailure) {
                               return _retry(
                                 'Unable to load vehicle variants',
@@ -679,17 +860,52 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
                                 ),
                               );
                             }
+
                             if (state is VehicleVarientsSuccess) {
                               final variants = state.response.data ?? [];
-                              final matching = variants.where(
-                                (e) => e.modelId == selectedModelId,
-                              );
+
+                              // പഴയ variant ID ഉപയോഗിച്ച് കണ്ടെത്തുക
+                              VehicleVarientsData? oldVariant;
+
+                              for (final variant in variants) {
+                                if (variant.id?.trim() ==
+                                    selectedVariantId?.trim()) {
+                                  oldVariant = variant;
+                                  break;
+                                }
+                              }
+
+                              if (oldVariant != null) {
+                                selectedModelId ??= oldVariant.modelId;
+                                selectedVariant ??= oldVariant.variantName
+                                    ?.trim();
+                              }
+
+                              final matching = variants.where((variant) {
+                                return selectedModelId != null &&
+                                    variant.modelId?.trim() ==
+                                        selectedModelId!.trim();
+                              }).toList();
+
                               final names = matching
-                                  .map((e) => e.variantName?.trim())
+                                  .map((variant) => variant.variantName?.trim())
                                   .whereType<String>()
-                                  .where((e) => e.isNotEmpty)
+                                  .where((name) => name.isNotEmpty)
                                   .toSet()
                                   .toList();
+
+                              // Variant name മാത്രം ലഭിച്ചിട്ടുണ്ടെങ്കിൽ ID കണ്ടെത്തുക
+                              if (selectedVariantId == null &&
+                                  selectedVariant != null) {
+                                for (final variant in matching) {
+                                  if (variant.variantName?.trim() ==
+                                      selectedVariant!.trim()) {
+                                    selectedVariantId = variant.id;
+                                    break;
+                                  }
+                                }
+                              }
+
                               return _dropdown(
                                 selectedModelId == null
                                     ? 'Select model first'
@@ -700,9 +916,27 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
                                     ? selectedVariant
                                     : null,
                                 names,
-                                (v) => setState(() => selectedVariant = v),
+                                (value) {
+                                  if (value == null) return;
+
+                                  VehicleVarientsData? selected;
+
+                                  for (final variant in matching) {
+                                    if (variant.variantName?.trim() ==
+                                        value.trim()) {
+                                      selected = variant;
+                                      break;
+                                    }
+                                  }
+
+                                  setState(() {
+                                    selectedVariant = value;
+                                    selectedVariantId = selected?.id;
+                                  });
+                                },
                               );
                             }
+
                             return _dropdown(
                               'Select variant',
                               null,
@@ -1068,50 +1302,118 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
       ),
     ),
   );
-
-  Widget _buildAttachPhoto() => GestureDetector(
-    onTap: _pickImage,
-    child: Container(
-      width: 139.w,
-      height: 100.h,
-      padding: EdgeInsets.all(8.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12.r),
-        border: Border.all(color: const Color(0xFFD1D1D1), width: 1.w),
-      ),
-      child: selectedImage != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(8.r),
-              child: Image.file(
-                selectedImage!,
-                fit: BoxFit.cover,
-                width: double.infinity,
-                height: double.infinity,
+  Widget _buildAttachPhoto() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 10.w,
+          runSpacing: 10.h,
+          children: [
+            // Existing images
+            ...existingImageUrls.map(
+              (url) => _imagePreview(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(
+                      url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.broken_image),
+                    ),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () => _deleteExistingImage(url),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            )
-          : Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.photo_camera_outlined,
-                  size: 24.sp,
-                  color: const Color(0xFF222222),
-                ),
-                SizedBox(height: 5.h),
-                Text(
-                  'Attach photo',
-                  style: TextStyle(
-                    fontFamily: 'Manrope',
-                    fontWeight: FontWeight.w500,
-                    fontSize: 12.sp,
-                    color: const Color(0xFF222222),
-                  ),
-                ),
-              ],
             ),
-    ),
-  );
+
+            // Newly uploaded images
+            ...uploadedImageUrls.map(
+              (url) => _imagePreview(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.network(
+                      url,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const Icon(Icons.broken_image),
+                    ),
+                    Positioned(
+                      top: 4,
+                      right: 4,
+                      child: GestureDetector(
+                        onTap: () => _deleteUploadedImage(url),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.close,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Add images button
+            GestureDetector(
+              onTap: isUploadingImage ? null : _pickImages,
+              child: Container(
+                width: 100.w,
+                height: 100.h,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(12.r),
+                ),
+                child: const Icon(Icons.add_a_photo_outlined),
+              ),
+            ),
+          ],
+        ),
+
+        if (isUploadingImage) ...[
+          SizedBox(height: 8.h),
+          const LinearProgressIndicator(),
+          const Text('Uploading images...'),
+        ],
+      ],
+    );
+  }
+
+  Widget _imagePreview({required Widget child}) {
+    return SizedBox(
+      width: 100.w,
+      height: 100.h,
+      child: ClipRRect(borderRadius: BorderRadius.circular(10.r), child: child),
+    );
+  }
 
   Widget _buildBottomButtons() => Container(
     width: double.infinity,
@@ -1151,7 +1453,9 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
           child: SizedBox(
             height: 52.h,
             child: ElevatedButton(
-              onPressed: isCreatingVehicle ? null : _createVehicle,
+              onPressed: (isCreatingVehicle || isUploadingImage)
+                  ? null
+                  : _createVehicle,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF73F700),
                 disabledBackgroundColor: const Color(0xFF73F700),
@@ -1250,15 +1554,79 @@ class _VehicleInformationScreenState extends State<VehicleInformationScreen> {
     );
   }
 
-  Future<void> _pickImage() async {
+  Future<void> _pickImages() async {
+    if (isUploadingImage) return;
+
     try {
-      final image = await _picker.pickImage(source: ImageSource.gallery);
-      if (image != null && mounted) {
-        setState(() => selectedImage = File(image.path));
+      final images = await _picker.pickMultiImage(imageQuality: 85);
+
+      if (images.isEmpty || !mounted) return;
+
+      // പുതുതായി തിരഞ്ഞെടുത്ത images മാത്രം എടുക്കുക
+      final newImages = images.map((image) => File(image.path)).toList();
+
+      setState(() {
+        selectedImages.addAll(newImages);
+        isUploadingImage = true;
+      });
+
+      // പുതുതായി തിരഞ്ഞെടുത്ത images മാത്രം upload ചെയ്യുക
+      for (final image in newImages) {
+        final response = await _apiClient.uploadFile(
+          folder: 'customer-vehicle',
+          file: image,
+        );
+
+        if (response is Map &&
+            response['success'] == true &&
+            response['data'] is Map &&
+            response['data']['url'] != null) {
+          uploadedImageUrls.add(response['data']['url'].toString());
+        } else {
+          throw Exception('Image upload failed');
+        }
+      }
+
+      if (mounted) {
+        _showMessage('Images uploaded successfully');
       }
     } catch (e) {
-      _showMessage('Unable to select image');
-      debugPrint('Image picker error: $e');
+      if (mounted) {
+        _showMessage('Image upload failed: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isUploadingImage = false;
+        });
+      }
     }
+  }
+
+  void _deleteImage({required String url, required bool isExisting}) {
+    setState(() {
+      if (isExisting) {
+        existingImageUrls.remove(url);
+      } else {
+        uploadedImageUrls.remove(url);
+
+        final index = uploadedImageUrls.indexOf(url);
+        if (index != -1) {
+          uploadedImageUrls.removeAt(index);
+        }
+      }
+    });
+  }
+
+  void _deleteExistingImage(String url) {
+    setState(() {
+      existingImageUrls.remove(url);
+    });
+  }
+
+  void _deleteUploadedImage(String url) {
+    setState(() {
+      uploadedImageUrls.remove(url);
+    });
   }
 }

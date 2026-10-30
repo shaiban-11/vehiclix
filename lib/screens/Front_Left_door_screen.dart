@@ -9,6 +9,7 @@ class FrontLeftDoor extends StatefulWidget {
 
   // Optional callback to send inspection details to the parent.
   final ValueChanged<Map<String, dynamic>>? onSaveDetails;
+  final ValueChanged<String>? onResultChanged;
 
   const FrontLeftDoor({
     super.key,
@@ -16,6 +17,7 @@ class FrontLeftDoor extends StatefulWidget {
     this.onSave,
     required this.showChasis,
     this.onSaveDetails,
+    this.onResultChanged,
   });
 
   @override
@@ -67,6 +69,8 @@ class _FrontLeftDoorState extends State<FrontLeftDoor> {
     setState(() {
       selectedResult = value;
     });
+
+    widget.onResultChanged?.call(value);
   }
 
   void _toggleDefect(String value) {

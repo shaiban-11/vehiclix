@@ -6,8 +6,9 @@ class InspectionSubmitLoading extends InspectionSubmitState {}
 
 class InspectionSubmitSuccess extends InspectionSubmitState {
   final dynamic response;
+  final String inspectionId;
 
-  InspectionSubmitSuccess(this.response);
+  InspectionSubmitSuccess({required this.response, required this.inspectionId});
 }
 
 class InspectionSubmitFailure extends InspectionSubmitState {

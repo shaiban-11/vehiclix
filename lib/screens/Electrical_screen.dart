@@ -71,65 +71,21 @@ class _ElectricalState extends State<Electrical> {
           : _defaultElectricalItems;
     }
 
-    final categories = state.model.data?.categories;
-
-    if (categories == null || categories.isEmpty) {
-      return widget.ElectricalItems.isNotEmpty
-          ? widget.ElectricalItems
-          : _defaultElectricalItems;
-    }
+    final categories = state.model.data?.categories ?? [];
 
     for (final category in categories) {
-      if (category is! Map) continue;
+      final categoryName =
+          category.categoryId?.name?.toLowerCase().trim() ?? '';
 
-      final categoryInfo = category['categoryId'];
-
-      String categoryName = '';
-
-      if (categoryInfo is Map) {
-        categoryName = (categoryInfo['name'] ?? '').toString();
-      } else if (categoryInfo is String) {
-        categoryName = categoryInfo;
-      }
-
-      if (categoryName.isEmpty) {
-        categoryName = (category['name'] ?? '').toString();
-      }
-
-      final normalizedName = categoryName.toLowerCase();
-
-      if (!normalizedName.contains('electrical') &&
-          !normalizedName.contains('electric')) {
+      if (!categoryName.contains('electrical') &&
+          !categoryName.contains('electric')) {
         continue;
       }
 
-      final rawItems = category['items'];
-
-      if (rawItems is! List || rawItems.isEmpty) {
-        continue;
-      }
-
-      final List<String> apiItems = [];
-
-      for (final item in rawItems) {
-        if (item is! Map) continue;
-
-        final itemInfo = item['itemId'];
-
-        String itemName = '';
-
-        if (itemInfo is Map) {
-          itemName = (itemInfo['name'] ?? '').toString();
-        }
-
-        if (itemName.isEmpty) {
-          itemName = (item['name'] ?? '').toString();
-        }
-
-        if (itemName.trim().isNotEmpty) {
-          apiItems.add(itemName.trim());
-        }
-      }
+      final apiItems = category.items
+          .map((entry) => entry.itemId?.name?.trim() ?? '')
+          .where((name) => name.isNotEmpty)
+          .toList();
 
       if (apiItems.isNotEmpty) {
         return apiItems;

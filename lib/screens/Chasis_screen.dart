@@ -50,83 +50,40 @@ class _ChasisScreenState extends State<ChasisScreen> {
   ///     {"itemId": {"name": "Core Support"}}
   ///   ]
   /// }
+
   List<String> _getChassisItems(InspectionDetailsState state) {
-    // If API data is not loaded, use the list supplied by the parent.
+    // API data load ആയിട്ടില്ലെങ്കിൽ fallback items ഉപയോഗിക്കുക.
     if (state is! InspectionDetailsLoaded) {
       return widget.ExteriorItems.isNotEmpty
           ? widget.ExteriorItems
           : _defaultChassisItems;
     }
 
-    final categories = state.model.data?.categories;
-
-    if (categories == null || categories.isEmpty) {
-      return widget.ExteriorItems.isNotEmpty
-          ? widget.ExteriorItems
-          : _defaultChassisItems;
-    }
+    final categories = state.model.data?.categories ?? [];
 
     for (final category in categories) {
-      if (category is! Map) continue;
-
-      final categoryInfo = category['categoryId'];
-
-      String categoryName = '';
-
-      if (categoryInfo is Map) {
-        categoryName = (categoryInfo['name'] ?? '').toString();
-      } else if (categoryInfo is String) {
-        categoryName = categoryInfo;
-      }
-
-      if (categoryName.isEmpty) {
-        categoryName = (category['name'] ?? '').toString();
-      }
-
-      final normalizedName = categoryName.toLowerCase();
+      final categoryName =
+          category.categoryId?.name?.toLowerCase().trim() ?? '';
 
       final isChassisCategory =
-          normalizedName.contains('chassis') ||
-          normalizedName.contains('chasis') ||
-          normalizedName.contains('underbody') ||
-          normalizedName.contains('under body');
+          categoryName.contains('chassis') ||
+          categoryName.contains('chasis') ||
+          categoryName.contains('underbody') ||
+          categoryName.contains('under body');
 
       if (!isChassisCategory) continue;
 
-      final rawItems = category['items'];
-
-      if (rawItems is! List || rawItems.isEmpty) {
-        continue;
-      }
-
-      final List<String> apiItems = [];
-
-      for (final item in rawItems) {
-        if (item is! Map) continue;
-
-        final itemInfo = item['itemId'];
-
-        String itemName = '';
-
-        if (itemInfo is Map) {
-          itemName = (itemInfo['name'] ?? '').toString();
-        }
-
-        if (itemName.isEmpty) {
-          itemName = (item['name'] ?? '').toString();
-        }
-
-        if (itemName.trim().isNotEmpty) {
-          apiItems.add(itemName.trim());
-        }
-      }
+      final apiItems = category.items
+          .map((entry) => entry.itemId?.name?.trim() ?? '')
+          .where((name) => name.isNotEmpty)
+          .toList();
 
       if (apiItems.isNotEmpty) {
         return apiItems;
       }
     }
 
-    // No matching chassis category was found.
+    // API-യിൽ chassis category ഇല്ലെങ്കിൽ fallback.
     return widget.ExteriorItems.isNotEmpty
         ? widget.ExteriorItems
         : _defaultChassisItems;

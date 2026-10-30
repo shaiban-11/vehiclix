@@ -58,7 +58,8 @@ class InspectionItem {
       'itemId': itemId,
       'status': status,
       if (defects != null) 'defects': defects,
-      if (comment != null) 'comment': comment,
+      if (comment != null && comment!.trim().isNotEmpty)
+        'comment': comment!.trim(),
       if (images != null)
         'images': images!.map((image) => image.toJson()).toList(),
     };
